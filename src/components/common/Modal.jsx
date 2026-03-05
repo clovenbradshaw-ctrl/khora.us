@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from './Icon.jsx';
 
 /**
@@ -26,7 +27,7 @@ export default function Modal({ open, onClose, title, fullscreen = false, childr
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={(e) => {
       if (e.target === e.currentTarget) onClose?.();
     }}>
@@ -49,6 +50,7 @@ export default function Modal({ open, onClose, title, fullscreen = false, childr
         )}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
