@@ -183,10 +183,10 @@ export default function SchemaBuilder() {
       <div style={{ width: 240, flexShrink: 0, borderRight: '1px solid var(--bd)', paddingRight: 16 }}>
         {/* Schema rooms */}
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-3)', marginBottom: 8, textTransform: 'uppercase' }}>
-          Schema Rooms
+          Schema Libraries
         </div>
         {schemaRooms.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 12 }}>No schema rooms</div>
+          <div style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 12 }}>No libraries yet</div>
         ) : (
           <div style={{ marginBottom: 12 }}>
             {schemaRooms.map(r => (
@@ -206,7 +206,7 @@ export default function SchemaBuilder() {
           </div>
         )}
         <button className="btn-ghost btn-sm" onClick={() => setShowCreateRoom(true)} style={{ width: '100%', fontSize: 11 }}>
-          <Icon name="plus" size={10} /> New Room
+          <Icon name="plus" size={10} /> New Library
         </button>
 
         {/* Forms */}
@@ -339,9 +339,9 @@ export default function SchemaBuilder() {
 
       {/* Create Room Modal */}
       {showCreateRoom && (
-        <Modal title="Create Schema Room" onClose={() => setShowCreateRoom(false)}>
+        <Modal title="Create Schema Library" onClose={() => setShowCreateRoom(false)}>
           <div className="field-group">
-            <label>Room Name</label>
+            <label>Library Name</label>
             <input type="text" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="e.g. Main Schema" autoFocus />
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>

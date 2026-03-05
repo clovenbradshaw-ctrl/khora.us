@@ -135,6 +135,9 @@ export const EVT = Object.freeze({
   // Organization
   ORG_ROSTER:   'io.khora.org.roster',
   ORG_METADATA: 'io.khora.org.metadata',
+
+  // Account Claim
+  ACCOUNT_CLAIM: 'io.khora.account.claim',
 });
 
 // ── Resource categories ────────────────────────────────────────────
