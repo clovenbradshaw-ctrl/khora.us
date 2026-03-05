@@ -17,7 +17,12 @@ export default function ThemeToggle({ compact = false }) {
     localStorage.setItem('khora:theme', dark ? 'dark' : 'light');
   }, [dark]);
 
-  const toggle = useCallback(() => setDark(d => !d), []);
+  const toggle = useCallback(() => {
+    document.documentElement.classList.add('theme-transition');
+    setDark(d => !d);
+    // Remove transition class after animation completes to avoid interfering with other transitions
+    setTimeout(() => document.documentElement.classList.remove('theme-transition'), 350);
+  }, []);
 
   if (compact) {
     return (
