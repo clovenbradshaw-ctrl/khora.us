@@ -1,21 +1,35 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Icon from './components/common/Icon.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import CaseList from './components/CaseList.jsx';
 import IndividualProfile from './components/IndividualProfile.jsx';
 import InboxView from './components/InboxView.jsx';
+import TeamView from './components/TeamView.jsx';
+import SchemaBuilder from './components/SchemaBuilder.jsx';
+import ResourcesView from './components/ResourcesView.jsx';
+import GovernanceView from './components/GovernanceView.jsx';
+import { MatrixService } from './matrix/service.js';
+import { EVT } from './engine/operators.js';
 import SEED_EVENTS from './data/seed-events.js';
 
 /**
  * App — main shell for Khora.
  *
- * Login → App shell with sidebar navigation.
- * Views: Cases, Inbox, Individual Profile.
+ * Real Matrix auth → context detection → Provider or Client view.
  */
 export default function App() {
   // ── Auth state ─────────────────────────────────────────────────
   const [user, setUser] = useState(null);
+  const [restoring, setRestoring] = useState(true);
+  const [authError, setAuthError] = useState('');
+
+  // ── Context ──────────────────────────────────────────────────────
+  const [contexts, setContexts] = useState([]); // ['client', 'provider']
+  const [activeContext, setActiveContext] = useState(
+    () => localStorage.getItem('khora:context') || 'provider'
+  );
+  const [detectingContext, setDetectingContext] = useState(false);
 
   // ── Navigation state ───────────────────────────────────────────
   const [view, setView] = useState('cases');
@@ -25,7 +39,7 @@ export default function App() {
     () => localStorage.getItem('khora:transparency') === 'true'
   );
 
-  // ── Demo data ──────────────────────────────────────────────────
+  // ── Demo data (used alongside Matrix data) ────────────────────
   const [events, setEvents] = useState(() => [...SEED_EVENTS]);
 
   const handleAddEvent = useCallback((event) => {
@@ -40,21 +54,105 @@ export default function App() {
     });
   }, []);
 
+  // ── Session restore on mount ─────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await MatrixService.restoreSession();
+        if (result) {
+          setUser({ userId: result.userId, role: 'provider' });
+          await detectContextFromRooms();
+        }
+      } catch (err) {
+        console.error('Session restore failed:', err);
+      }
+      setRestoring(false);
+    })();
+  }, []);
+
+  // ── Detect contexts from Matrix rooms ────────────────────────
+  const detectContextFromRooms = async () => {
+    setDetectingContext(true);
+    try {
+      const detected = await MatrixService.detectContexts(EVT.IDENTITY);
+      setContexts(detected);
+      if (detected.length === 1) {
+        setActiveContext(detected[0]);
+        localStorage.setItem('khora:context', detected[0]);
+      }
+    } catch (err) {
+      console.error('Context detection failed:', err);
+    }
+    setDetectingContext(false);
+  };
+
+  // ── Login handler ────────────────────────────────────────────
+  const handleLogin = async (homeserver, username, password) => {
+    setAuthError('');
+    const result = await MatrixService.login(homeserver, username, password);
+    setUser({ userId: result.userId, role: 'provider' });
+    await detectContextFromRooms();
+  };
+
+  // ── Logout ───────────────────────────────────────────────────
+  const handleLogout = async () => {
+    await MatrixService.logout();
+    setUser(null);
+    setContexts([]);
+    setView('cases');
+    setSelectedCase(null);
+  };
+
+  // ── Context switch ───────────────────────────────────────────
+  const switchContext = (ctx) => {
+    setActiveContext(ctx);
+    localStorage.setItem('khora:context', ctx);
+    setView(ctx === 'client' ? 'vault' : 'cases');
+    setSelectedCase(null);
+  };
+
+  // ── Loading ──────────────────────────────────────────────────
+  if (restoring) {
+    return (
+      <div className="login-screen">
+        <div style={{ fontSize: 14, color: 'var(--tx-3)' }}>Restoring session...</div>
+      </div>
+    );
+  }
+
   // ── Login ──────────────────────────────────────────────────────
   if (!user) {
-    return <LoginScreen onLogin={setUser} />;
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   // ── Navigation items ───────────────────────────────────────────
-  const navItems = [
-    { key: 'cases', label: 'Cases', icon: 'folder' },
-    { key: 'inbox', label: 'Inbox', icon: 'inbox', badge: 3 },
+  const providerNav = [
+    { group: 'Case Management', items: [
+      { key: 'cases', label: 'Cases', icon: 'folder' },
+      { key: 'inbox', label: 'Inbox', icon: 'inbox' },
+    ]},
+    { group: 'Team & Org', items: [
+      { key: 'teams', label: 'Teams', icon: 'users' },
+      { key: 'resources', label: 'Resources', icon: 'package' },
+    ]},
+    { group: 'Tools', items: [
+      { key: 'schema', label: 'Schema', icon: 'database' },
+      { key: 'governance', label: 'Governance', icon: 'vote' },
+      { key: 'metrics', label: 'Metrics', icon: 'bar-chart' },
+    ]},
   ];
 
-  const navTools = [
-    { key: 'schema', label: 'Schema', icon: 'database' },
-    { key: 'metrics', label: 'Metrics', icon: 'bar-chart' },
+  const clientNav = [
+    { group: 'My Data', items: [
+      { key: 'vault', label: 'My Vault', icon: 'lock' },
+      { key: 'resources', label: 'My Resources', icon: 'package' },
+    ]},
+    { group: 'Communication', items: [
+      { key: 'inbox', label: 'Messages', icon: 'inbox' },
+    ]},
   ];
+
+  const navGroups = activeContext === 'client' ? clientNav : providerNav;
 
   // ── Handle case selection ──────────────────────────────────────
   const handleSelectCase = (caseId) => {
@@ -65,6 +163,19 @@ export default function App() {
   const handleBackToList = () => {
     setSelectedCase(null);
     setView('cases');
+  };
+
+  // ── View titles ────────────────────────────────────────────────
+  const VIEW_TITLES = {
+    cases: 'Cases',
+    inbox: 'Messages',
+    profile: 'Individual Profile',
+    teams: 'Teams',
+    resources: 'Resources',
+    schema: 'Schema Workbench',
+    governance: 'Governance',
+    metrics: 'Metrics',
+    vault: 'My Vault',
   };
 
   // ── Render view content ────────────────────────────────────────
@@ -86,17 +197,20 @@ export default function App() {
       return <InboxView />;
     }
 
+    if (view === 'teams') {
+      return <TeamView />;
+    }
+
     if (view === 'schema') {
-      return (
-        <div className="empty-state" style={{ minHeight: 400 }}>
-          <Icon name="database" size={40} color="var(--tx-3)" className="empty-state-icon" />
-          <div className="empty-state-title">Schema Workbench</div>
-          <div className="empty-state-desc">
-            Define fields using EO operators. NUL creates, DES designates, INS instantiates.
-            Schema changes are governed by the same operator vocabulary as data claims.
-          </div>
-        </div>
-      );
+      return <SchemaBuilder />;
+    }
+
+    if (view === 'resources') {
+      return <ResourcesView />;
+    }
+
+    if (view === 'governance') {
+      return <GovernanceView />;
     }
 
     if (view === 'metrics') {
@@ -106,6 +220,18 @@ export default function App() {
           <div className="empty-state-title">Metrics</div>
           <div className="empty-state-desc">
             Anonymized aggregate metrics. Individual data is never exposed.
+          </div>
+        </div>
+      );
+    }
+
+    if (view === 'vault') {
+      return (
+        <div className="empty-state" style={{ minHeight: 400 }}>
+          <Icon name="lock" size={40} color="var(--tx-3)" className="empty-state-icon" />
+          <div className="empty-state-title">My Vault</div>
+          <div className="empty-state-desc">
+            Your personal data vault. All fields are encrypted and under your control.
           </div>
         </div>
       );
@@ -131,38 +257,48 @@ export default function App() {
           </button>
         </div>
 
+        {/* Context switcher */}
+        {contexts.length > 1 && (
+          <div style={{ padding: '0 12px', marginBottom: 8 }}>
+            <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--bd)' }}>
+              {contexts.map(ctx => (
+                <button
+                  key={ctx}
+                  onClick={() => switchContext(ctx)}
+                  style={{
+                    flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
+                    background: activeContext === ctx ? 'var(--gold-dim)' : 'transparent',
+                    color: activeContext === ctx ? 'var(--gold)' : 'var(--tx-3)',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {ctx}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Navigation */}
         <nav className="sidebar-nav">
-          <div className="sidebar-nav-group">
-            <div className="sidebar-nav-label">Case Management</div>
-            {navItems.map(item => (
-              <button
-                key={item.key}
-                className={`sidebar-nav-item ${view === item.key ? 'active' : ''}`}
-                onClick={() => { setView(item.key); setSelectedCase(null); }}
-              >
-                <Icon name={item.icon} size={16} />
-                {item.label}
-                {item.badge > 0 && (
-                  <span className="sidebar-nav-badge">{item.badge}</span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="sidebar-nav-group">
-            <div className="sidebar-nav-label">Tools</div>
-            {navTools.map(item => (
-              <button
-                key={item.key}
-                className={`sidebar-nav-item ${view === item.key ? 'active' : ''}`}
-                onClick={() => { setView(item.key); setSelectedCase(null); }}
-              >
-                <Icon name={item.icon} size={16} />
-                {item.label}
-              </button>
-            ))}
-          </div>
+          {navGroups.map(group => (
+            <div className="sidebar-nav-group" key={group.group}>
+              <div className="sidebar-nav-label">{group.group}</div>
+              {group.items.map(item => (
+                <button
+                  key={item.key}
+                  className={`sidebar-nav-item ${view === item.key ? 'active' : ''}`}
+                  onClick={() => { setView(item.key); setSelectedCase(null); }}
+                >
+                  <Icon name={item.icon} size={16} />
+                  {item.label}
+                  {item.badge > 0 && (
+                    <span className="sidebar-nav-badge">{item.badge}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
 
           <div className="sidebar-nav-group">
             <div className="sidebar-nav-label">Transparency</div>
@@ -186,13 +322,13 @@ export default function App() {
               {user.userId}
             </div>
             <div style={{ fontSize: 10, color: 'var(--tx-3)' }}>
-              {user.role || 'Provider'}
+              {MatrixService.isConnected ? 'Connected' : 'Offline'} · {activeContext}
             </div>
           </div>
           <ThemeToggle compact />
           <button
             className="btn-icon"
-            onClick={() => setUser(null)}
+            onClick={handleLogout}
             title="Sign out"
           >
             <Icon name="log-out" size={14} color="var(--tx-3)" />
@@ -202,7 +338,7 @@ export default function App() {
 
       {/* ── Main area ── */}
       <div className="app-main">
-        {/* Top bar (shows collapse-expand when sidebar hidden) */}
+        {/* Top bar */}
         <div className="app-main-header">
           {sidebarCollapsed && (
             <button
@@ -214,11 +350,7 @@ export default function App() {
             </button>
           )}
           <span style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 600, color: 'var(--tx-0)' }}>
-            {view === 'cases' && 'Cases'}
-            {view === 'inbox' && 'Messages'}
-            {view === 'profile' && 'Individual Profile'}
-            {view === 'schema' && 'Schema Workbench'}
-            {view === 'metrics' && 'Metrics'}
+            {VIEW_TITLES[view] || 'Khora'}
           </span>
           <div className="nav-spacer" />
           {view === 'cases' && (
@@ -230,19 +362,32 @@ export default function App() {
 
         {/* Content */}
         <div className="app-main-content anim-up">
-          {renderContent()}
+          {detectingContext ? (
+            <div className="empty-state" style={{ minHeight: 300 }}>
+              <div className="empty-state-desc">Detecting your context from Matrix rooms...</div>
+            </div>
+          ) : (
+            renderContent()
+          )}
         </div>
       </div>
 
       {/* ── Mobile bottom nav ── */}
       <div className="mobile-bottom-nav">
         <div className="mobile-bottom-nav-inner">
-          {[
-            { key: 'cases', label: 'Cases', icon: 'folder' },
-            { key: 'inbox', label: 'Inbox', icon: 'inbox' },
-            { key: 'schema', label: 'Schema', icon: 'database' },
-            { key: 'metrics', label: 'Metrics', icon: 'bar-chart' },
-          ].map(item => (
+          {(activeContext === 'client'
+            ? [
+              { key: 'vault', label: 'Vault', icon: 'lock' },
+              { key: 'resources', label: 'Resources', icon: 'package' },
+              { key: 'inbox', label: 'Messages', icon: 'inbox' },
+            ]
+            : [
+              { key: 'cases', label: 'Cases', icon: 'folder' },
+              { key: 'teams', label: 'Teams', icon: 'users' },
+              { key: 'resources', label: 'Resources', icon: 'package' },
+              { key: 'governance', label: 'Gov', icon: 'vote' },
+            ]
+          ).map(item => (
             <button
               key={item.key}
               className={`mobile-bottom-nav-item ${view === item.key ? 'active' : ''}`}
