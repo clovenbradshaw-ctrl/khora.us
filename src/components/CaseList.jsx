@@ -113,10 +113,11 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
     if (!createForm.preferredName.trim()) return;
     setCreating(true);
     try {
-      await ClientStore.createClient(createForm);
+      const created = await ClientStore.createClient(createForm);
       setShowCreate(false);
       setCreateForm({ preferredName: '', legalName: '', status: 'Intake' });
-      onClientCreated?.();
+      // Pass the newly created client so the parent can optimistically update
+      onClientCreated?.(created);
     } catch (err) {
       console.error('Failed to create client:', err);
     }
@@ -129,7 +130,7 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
     // Merge real Matrix clients
     const realCases = clients.map(c => ({
       id: c.roomId,
-      name: c.meta?.preferred_name || c.roomName || 'Unknown',
+      name: cleanName(c.meta?.preferred_name || c.roomName || 'Unknown'),
       status: c.meta?.status || 'Intake',
       housing: c.meta?.housing_status || '—',
       lastEvent: c.meta?.created || '',
@@ -154,7 +155,7 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return cases;
-  }, [search, sortField, sortDir, hideDemoData]);
+  }, [search, sortField, sortDir, hideDemoData, clients]);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -326,6 +327,11 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
       )}
     </div>
   );
+}
+
+/** Strip SDK-injected bracket prefixes like "[Client] " from room names. */
+function cleanName(raw) {
+  return raw.replace(/^\[.*?\]\s*/, '').trim() || raw;
 }
 
 function formatDate(d) {
