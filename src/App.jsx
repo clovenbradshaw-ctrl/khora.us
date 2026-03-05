@@ -1,47 +1,37 @@
 import { useState, useCallback } from 'react';
 import Icon from './components/common/Icon.jsx';
-import Modal from './components/common/Modal.jsx';
-import AttentionStrip from './components/AttentionStrip.jsx';
-import FieldCard from './components/FieldCard.jsx';
-import ObservationPanel from './components/ObservationPanel.jsx';
-import TimelineView from './components/TimelineView.jsx';
-import AuditPanel from './components/AuditPanel.jsx';
-import Search from './components/Search.jsx';
-import RecentActivity from './components/RecentActivity.jsx';
-import useClaimStacks from './hooks/useClaimStacks.js';
-import useAttention from './hooks/useAttention.js';
-import useObservation from './hooks/useObservation.js';
-import { SECTIONS } from './schema/fields.js';
-import { replayTo, buildClaimEvent, inferOperator } from './engine/claims.js';
+import ThemeToggle from './components/ThemeToggle.jsx';
+import LoginScreen from './components/LoginScreen.jsx';
+import CaseList from './components/CaseList.jsx';
+import IndividualProfile from './components/IndividualProfile.jsx';
+import InboxView from './components/InboxView.jsx';
+import SEED_EVENTS from './data/seed-events.js';
 
 /**
- * App — main shell for the Khora claim-stack UI.
+ * App — main shell for Khora.
  *
- * Wires together all Phase 4 components with the claim engine.
- * In demo mode (no Matrix connection), works with local event state.
+ * Login → App shell with sidebar navigation.
+ * Views: Cases, Inbox, Individual Profile.
  */
 export default function App() {
-  // ── Demo state (no Matrix needed) ─────────────────────────────
-  const [events, setEvents] = useState([]);
-  const [view, setView] = useState('fields');  // fields | search | timeline
+  // ── Auth state ─────────────────────────────────────────────────
+  const [user, setUser] = useState(null);
+
+  // ── Navigation state ───────────────────────────────────────────
+  const [view, setView] = useState('cases');
+  const [selectedCase, setSelectedCase] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [transparencyMode, setTransparencyMode] = useState(
     () => localStorage.getItem('khora:transparency') === 'true'
   );
 
-  // Observation panel state
-  const [obsField, setObsField] = useState(null);
-  const [obsStack, setObsStack] = useState(null);
-  const [timelineOpen, setTimelineOpen] = useState(false);
+  // ── Demo data ──────────────────────────────────────────────────
+  const [events, setEvents] = useState(() => [...SEED_EVENTS]);
 
-  // Demo agent
-  const agent = '@demo:khora.us';
-  const agentRole = 'Caseworker';
+  const handleAddEvent = useCallback((event) => {
+    setEvents(prev => [...prev, event]);
+  }, []);
 
-  // ── Replay stacks from local events ───────────────────────────
-  const stacks = replayTo(events);
-  const attentionItems = useAttention(stacks);
-
-  // ── Toggle transparency mode ──────────────────────────────────
   const toggleTransparency = useCallback(() => {
     setTransparencyMode(prev => {
       const next = !prev;
@@ -50,156 +40,220 @@ export default function App() {
     });
   }, []);
 
-  // ── Handle observation save ───────────────────────────────────
-  const handleSave = useCallback((fieldKey, newClaim, ops) => {
-    const claimEvent = buildClaimEvent(agent, agentRole, ops, `${agentRole} updated ${fieldKey}`);
-    setEvents(prev => [...prev, claimEvent]);
-    setObsField(null);
-    setObsStack(null);
-  }, [agent, agentRole]);
+  // ── Login ──────────────────────────────────────────────────────
+  if (!user) {
+    return <LoginScreen onLogin={setUser} />;
+  }
 
-  // ── Open observation panel ────────────────────────────────────
-  const handleObserve = useCallback((fieldKey, stack) => {
-    setObsField(fieldKey);
-    setObsStack(stack || stacks.get(fieldKey) || { claims: [], conLinks: {} });
-  }, [stacks]);
+  // ── Navigation items ───────────────────────────────────────────
+  const navItems = [
+    { key: 'cases', label: 'Cases', icon: 'folder' },
+    { key: 'inbox', label: 'Inbox', icon: 'inbox', badge: 3 },
+  ];
+
+  const navTools = [
+    { key: 'schema', label: 'Schema', icon: 'database' },
+    { key: 'metrics', label: 'Metrics', icon: 'bar-chart' },
+  ];
+
+  // ── Handle case selection ──────────────────────────────────────
+  const handleSelectCase = (caseId) => {
+    setSelectedCase(caseId);
+    setView('profile');
+  };
+
+  const handleBackToList = () => {
+    setSelectedCase(null);
+    setView('cases');
+  };
+
+  // ── Render view content ────────────────────────────────────────
+  const renderContent = () => {
+    if (view === 'profile' && selectedCase) {
+      return (
+        <IndividualProfile
+          events={events}
+          onAddEvent={handleAddEvent}
+          transparencyMode={transparencyMode}
+          onBack={handleBackToList}
+          agent={user.userId}
+          agentRole="Caseworker"
+        />
+      );
+    }
+
+    if (view === 'inbox') {
+      return <InboxView />;
+    }
+
+    if (view === 'schema') {
+      return (
+        <div className="empty-state" style={{ minHeight: 400 }}>
+          <Icon name="database" size={40} color="var(--tx-3)" className="empty-state-icon" />
+          <div className="empty-state-title">Schema Workbench</div>
+          <div className="empty-state-desc">
+            Define fields using EO operators. NUL creates, DES designates, INS instantiates.
+            Schema changes are governed by the same operator vocabulary as data claims.
+          </div>
+        </div>
+      );
+    }
+
+    if (view === 'metrics') {
+      return (
+        <div className="empty-state" style={{ minHeight: 400 }}>
+          <Icon name="bar-chart" size={40} color="var(--tx-3)" className="empty-state-icon" />
+          <div className="empty-state-title">Metrics</div>
+          <div className="empty-state-desc">
+            Anonymized aggregate metrics. Individual data is never exposed.
+          </div>
+        </div>
+      );
+    }
+
+    // Default: case list
+    return <CaseList onSelectCase={handleSelectCase} />;
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      {/* ── Nav ── */}
-      <nav className="nav">
-        <span className="nav-title">Khora</span>
-        <span style={{ fontSize: 11, color: 'var(--tx-3)' }}>Claim Stack Architecture</span>
-        <div className="nav-spacer" />
+    <div className="app-shell">
+      {/* ── Sidebar ── */}
+      <aside className={`app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        {/* Brand */}
+        <div className="sidebar-header">
+          <span className="sidebar-brand">Khora</span>
+          <button
+            className="sidebar-collapse-btn"
+            onClick={() => setSidebarCollapsed(true)}
+            title="Collapse sidebar"
+          >
+            <Icon name="chevron-left" size={14} />
+          </button>
+        </div>
 
-        {/* View toggles */}
-        <button
-          className={`btn btn-sm ${view === 'fields' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setView('fields')}
-        >
-          Fields
-        </button>
-        <button
-          className={`btn btn-sm ${view === 'search' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setView('search')}
-        >
-          <Icon name="search" size={12} /> Search
-        </button>
-        <button
-          className="btn btn-sm btn-ghost"
-          onClick={() => setTimelineOpen(true)}
-        >
-          <Icon name="history" size={12} /> Timeline
-        </button>
-
-        {/* Transparency toggle */}
-        <button
-          className={`btn btn-sm ${transparencyMode ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={toggleTransparency}
-          title={transparencyMode ? 'Hide EO operators' : 'Show EO operators (audit mode)'}
-        >
-          <Icon name={transparencyMode ? 'eye' : 'eye-off'} size={12} />
-          {transparencyMode ? 'EO On' : 'EO Off'}
-        </button>
-      </nav>
-
-      {/* ── Main content ── */}
-      <div className="container" style={{ flex: 1, paddingTop: 16 }}>
-        {/* Attention strip */}
-        {attentionItems.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <AttentionStrip
-              items={attentionItems}
-              onUpdate={(fieldKey) => handleObserve(fieldKey)}
-            />
-          </div>
-        )}
-
-        {/* View: Fields */}
-        {view === 'fields' && (
-          <div>
-            {/* Recent activity */}
-            {events.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <div className="section-header">
-                  <Icon name="activity" size={14} color="var(--tx-2)" />
-                  Recent Activity
-                </div>
-                <RecentActivity events={events} transparencyMode={transparencyMode} />
-              </div>
-            )}
-
-            {/* Audit panel (when transparency on) */}
-            {transparencyMode && events.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <AuditPanel events={events} currentStacks={stacks} />
-              </div>
-            )}
-
-            {/* Field cards by section */}
-            {SECTIONS.map(section => (
-              <div key={section.key} style={{ marginBottom: 20 }}>
-                <div className="section-header">
-                  <Icon name={section.icon} size={14} color="var(--tx-2)" />
-                  {section.label}
-                </div>
-                <div className="stack">
-                  {section.fields.map(field => (
-                    <FieldCard
-                      key={field.key}
-                      fieldKey={field.key}
-                      stack={stacks.get(field.key) || { claims: [], conLinks: {} }}
-                      transparencyMode={transparencyMode}
-                      onObserve={handleObserve}
-                    />
-                  ))}
-                </div>
-              </div>
+        {/* Navigation */}
+        <nav className="sidebar-nav">
+          <div className="sidebar-nav-group">
+            <div className="sidebar-nav-label">Case Management</div>
+            {navItems.map(item => (
+              <button
+                key={item.key}
+                className={`sidebar-nav-item ${view === item.key ? 'active' : ''}`}
+                onClick={() => { setView(item.key); setSelectedCase(null); }}
+              >
+                <Icon name={item.icon} size={16} />
+                {item.label}
+                {item.badge > 0 && (
+                  <span className="sidebar-nav-badge">{item.badge}</span>
+                )}
+              </button>
             ))}
           </div>
-        )}
 
-        {/* View: Search */}
-        {view === 'search' && (
-          <Search
-            stacks={stacks}
-            transparencyMode={transparencyMode}
-            onObserve={handleObserve}
-          />
-        )}
+          <div className="sidebar-nav-group">
+            <div className="sidebar-nav-label">Tools</div>
+            {navTools.map(item => (
+              <button
+                key={item.key}
+                className={`sidebar-nav-item ${view === item.key ? 'active' : ''}`}
+                onClick={() => { setView(item.key); setSelectedCase(null); }}
+              >
+                <Icon name={item.icon} size={16} />
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="sidebar-nav-group">
+            <div className="sidebar-nav-label">Transparency</div>
+            <button
+              className={`sidebar-nav-item ${transparencyMode ? 'active' : ''}`}
+              onClick={toggleTransparency}
+            >
+              <Icon name={transparencyMode ? 'eye' : 'eye-off'} size={16} />
+              {transparencyMode ? 'EO Operators On' : 'EO Operators Off'}
+            </button>
+          </div>
+        </nav>
+
+        {/* Footer */}
+        <div className="sidebar-footer">
+          <div className="avatar avatar-sm" style={{ background: 'var(--gold-dim)', color: 'var(--gold)' }}>
+            {(user.userId || '@D').charAt(1).toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-0)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {user.userId}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--tx-3)' }}>
+              {user.role || 'Provider'}
+            </div>
+          </div>
+          <ThemeToggle compact />
+          <button
+            className="btn-icon"
+            onClick={() => setUser(null)}
+            title="Sign out"
+          >
+            <Icon name="log-out" size={14} color="var(--tx-3)" />
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main area ── */}
+      <div className="app-main">
+        {/* Top bar (shows collapse-expand when sidebar hidden) */}
+        <div className="app-main-header">
+          {sidebarCollapsed && (
+            <button
+              className="sidebar-collapse-btn"
+              onClick={() => setSidebarCollapsed(false)}
+              title="Expand sidebar"
+            >
+              <Icon name="menu" size={14} />
+            </button>
+          )}
+          <span style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 600, color: 'var(--tx-0)' }}>
+            {view === 'cases' && 'Cases'}
+            {view === 'inbox' && 'Messages'}
+            {view === 'profile' && 'Individual Profile'}
+            {view === 'schema' && 'Schema Workbench'}
+            {view === 'metrics' && 'Metrics'}
+          </span>
+          <div className="nav-spacer" />
+          {view === 'cases' && (
+            <button className="btn-primary btn-sm" onClick={() => handleSelectCase('case_001')}>
+              <Icon name="plus" size={12} /> Open Demo Case
+            </button>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="app-main-content anim-up">
+          {renderContent()}
+        </div>
       </div>
 
-      {/* ── Observation Panel Modal ── */}
-      <Modal
-        open={!!obsField}
-        onClose={() => { setObsField(null); setObsStack(null); }}
-        title={`Record Observation — ${obsField || ''}`}
-      >
-        {obsField && (
-          <ObservationPanel
-            fieldKey={obsField}
-            currentStack={obsStack}
-            agent={agent}
-            agentRole={agentRole}
-            transparencyMode={transparencyMode}
-            onSave={handleSave}
-            onClose={() => { setObsField(null); setObsStack(null); }}
-          />
-        )}
-      </Modal>
-
-      {/* ── Timeline Modal ── */}
-      <Modal
-        open={timelineOpen}
-        onClose={() => setTimelineOpen(false)}
-        title="Case Timeline"
-        fullscreen
-      >
-        <TimelineView
-          events={events}
-          transparencyMode={transparencyMode}
-        />
-      </Modal>
+      {/* ── Mobile bottom nav ── */}
+      <div className="mobile-bottom-nav">
+        <div className="mobile-bottom-nav-inner">
+          {[
+            { key: 'cases', label: 'Cases', icon: 'folder' },
+            { key: 'inbox', label: 'Inbox', icon: 'inbox' },
+            { key: 'schema', label: 'Schema', icon: 'database' },
+            { key: 'metrics', label: 'Metrics', icon: 'bar-chart' },
+          ].map(item => (
+            <button
+              key={item.key}
+              className={`mobile-bottom-nav-item ${view === item.key ? 'active' : ''}`}
+              onClick={() => { setView(item.key); setSelectedCase(null); }}
+            >
+              <Icon name={item.icon} size={20} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

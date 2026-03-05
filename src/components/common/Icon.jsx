@@ -34,6 +34,17 @@ const ICON_MAP = {
   'code': icons.Code,
   'file-text': icons.FileText,
   'activity': icons.Activity,
+  'sun': icons.Sun,
+  'moon': icons.Moon,
+  'inbox': icons.Inbox,
+  'layout-dashboard': icons.LayoutDashboard,
+  'settings': icons.Settings,
+  'log-out': icons.LogOut,
+  'menu': icons.Menu,
+  'message-square': icons.MessageSquare,
+  'folder': icons.Folder,
+  'database': icons.Database,
+  'bar-chart': icons.BarChart,
 };
 
 export default function Icon({ name, size = 16, color, className, style, ...props }) {
