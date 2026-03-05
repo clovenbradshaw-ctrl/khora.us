@@ -10,6 +10,8 @@ import SchemaBuilder from './components/SchemaBuilder.jsx';
 import ResourcesView from './components/ResourcesView.jsx';
 import GovernanceView from './components/GovernanceView.jsx';
 import { MatrixService } from './matrix/service.js';
+import { ClientStore } from './matrix/client-store.js';
+import { ClaimStore } from './matrix/claim-store.js';
 import { EVT } from './engine/operators.js';
 import SEED_EVENTS from './data/seed-events.js';
 
@@ -48,6 +50,24 @@ export default function App() {
     return [...SEED_EVENTS];
   });
 
+  // ── Real client data from Matrix ─────────────────────────────────
+  const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [profileEvents, setProfileEvents] = useState([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  const loadClients = useCallback(async () => {
+    if (!MatrixService.isConnected) return;
+    setClientsLoading(true);
+    try {
+      const result = await ClientStore.loadClients();
+      setClients(result);
+    } catch (err) {
+      console.error('Failed to load clients:', err);
+    }
+    setClientsLoading(false);
+  }, []);
+
   const handleAddEvent = useCallback((event) => {
     setEvents(prev => [...prev, event]);
   }, []);
@@ -81,6 +101,7 @@ export default function App() {
         if (result) {
           setUser({ userId: result.userId, role: 'provider' });
           await detectContextFromRooms();
+          await loadClients();
         }
       } catch (err) {
         console.error('Session restore failed:', err);
@@ -111,6 +132,7 @@ export default function App() {
     const result = await MatrixService.login(homeserver, username, password);
     setUser({ userId: result.userId, role: 'provider' });
     await detectContextFromRooms();
+    await loadClients();
   };
 
   // ── Logout ───────────────────────────────────────────────────
@@ -174,13 +196,30 @@ export default function App() {
   const navGroups = activeContext === 'client' ? clientNav : providerNav;
 
   // ── Handle case selection ──────────────────────────────────────
-  const handleSelectCase = (caseId) => {
+  const handleSelectCase = async (caseId) => {
     setSelectedCase(caseId);
     setView('profile');
+
+    // Load events from Matrix for real clients (room IDs start with !)
+    if (caseId?.startsWith('!')) {
+      setProfileLoading(true);
+      setProfileEvents([]);
+      try {
+        const evts = await ClaimStore.loadEvents(caseId);
+        setProfileEvents(evts);
+      } catch (err) {
+        console.error('Failed to load client events:', err);
+      }
+      setProfileLoading(false);
+    } else {
+      // Demo case — use seed events
+      setProfileEvents(hideDemoData ? [] : [...SEED_EVENTS]);
+    }
   };
 
   const handleBackToList = () => {
     setSelectedCase(null);
+    setProfileEvents([]);
     setView('cases');
   };
 
@@ -200,10 +239,26 @@ export default function App() {
   // ── Render view content ────────────────────────────────────────
   const renderContent = () => {
     if (view === 'profile' && selectedCase) {
+      const isRealClient = selectedCase.startsWith('!');
+
+      if (profileLoading) {
+        return (
+          <div className="empty-state" style={{ minHeight: 300 }}>
+            <div className="empty-state-desc">Loading client record...</div>
+          </div>
+        );
+      }
+
       return (
         <IndividualProfile
-          events={events}
-          onAddEvent={handleAddEvent}
+          events={isRealClient ? profileEvents : events}
+          onAddEvent={isRealClient
+            ? async (event) => {
+                await ClaimStore.emitEvent(selectedCase, event);
+                const evts = await ClaimStore.loadEvents(selectedCase);
+                setProfileEvents(evts);
+              }
+            : handleAddEvent}
           transparencyMode={transparencyMode}
           onBack={handleBackToList}
           agent={user.userId}
@@ -257,7 +312,15 @@ export default function App() {
     }
 
     // Default: case list
-    return <CaseList onSelectCase={handleSelectCase} hideDemoData={hideDemoData} />;
+    return (
+      <CaseList
+        onSelectCase={handleSelectCase}
+        hideDemoData={hideDemoData}
+        clients={clients}
+        loading={clientsLoading}
+        onClientCreated={loadClients}
+      />
+    );
   };
 
   return (
