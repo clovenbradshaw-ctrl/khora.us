@@ -52,35 +52,45 @@ export const TeamStore = {
    * Load all teams the user belongs to.
    */
   async loadTeams() {
-    const scanned = await MatrixService.scanRooms([EVT.TEAM_META, EVT.TEAM_MEMBERS, EVT.IDENTITY]);
-    return scanned
-      .filter(r => r.state[EVT.IDENTITY]?.account_type === 'team' || r.state[EVT.TEAM_META])
-      .map(r => ({
-        roomId: r.roomId,
-        roomName: r.roomName,
-        meta: r.state[EVT.TEAM_META] || {},
-        members: r.state[EVT.TEAM_MEMBERS]?.members || [],
-      }));
+    try {
+      const scanned = await MatrixService.scanRooms([EVT.TEAM_META, EVT.TEAM_MEMBERS, EVT.IDENTITY]);
+      return scanned
+        .filter(r => r.state[EVT.IDENTITY]?.account_type === 'team' || r.state[EVT.TEAM_META])
+        .map(r => ({
+          roomId: r.roomId,
+          roomName: r.roomName,
+          meta: r.state[EVT.TEAM_META] || {},
+          members: r.state[EVT.TEAM_MEMBERS]?.members || [],
+        }));
+    } catch (err) {
+      console.warn('loadTeams: scan failed, returning empty list:', err.message);
+      return [];
+    }
   },
 
   /**
    * Get team detail (meta + members + schema).
    */
   async getTeamDetail(roomId) {
-    const [meta, members, schema] = await Promise.all([
+    const [meta, members, schema] = await Promise.allSettled([
       MatrixService.getState(roomId, EVT.TEAM_META),
       MatrixService.getState(roomId, EVT.TEAM_MEMBERS),
       MatrixService.getAllState(roomId, EVT.TEAM_SCHEMA),
     ]);
 
-    const roomMembers = await MatrixService.getRoomMembers(roomId);
+    let roomMembers = [];
+    try {
+      roomMembers = await MatrixService.getRoomMembers(roomId);
+    } catch {
+      // Room may not be accessible
+    }
 
     return {
       roomId,
-      meta: meta || {},
-      members: members?.members || [],
+      meta: meta.status === 'fulfilled' ? (meta.value || {}) : {},
+      members: members.status === 'fulfilled' ? (members.value?.members || []) : [],
       roomMembers,
-      schema: schema.map(s => s.content),
+      schema: schema.status === 'fulfilled' ? (schema.value || []).map(s => s.content) : [],
     };
   },
 

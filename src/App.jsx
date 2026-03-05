@@ -40,7 +40,13 @@ export default function App() {
   );
 
   // ── Demo data (used alongside Matrix data) ────────────────────
-  const [events, setEvents] = useState(() => [...SEED_EVENTS]);
+  const [hideDemoData, setHideDemoData] = useState(
+    () => localStorage.getItem('khora:hideDemoData') === 'true'
+  );
+  const [events, setEvents] = useState(() => {
+    if (localStorage.getItem('khora:hideDemoData') === 'true') return [];
+    return [...SEED_EVENTS];
+  });
 
   const handleAddEvent = useCallback((event) => {
     setEvents(prev => [...prev, event]);
@@ -50,6 +56,19 @@ export default function App() {
     setTransparencyMode(prev => {
       const next = !prev;
       localStorage.setItem('khora:transparency', String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleDemoData = useCallback(() => {
+    setHideDemoData(prev => {
+      const next = !prev;
+      localStorage.setItem('khora:hideDemoData', String(next));
+      if (next) {
+        setEvents([]);
+      } else {
+        setEvents([...SEED_EVENTS]);
+      }
       return next;
     });
   }, []);
@@ -238,7 +257,7 @@ export default function App() {
     }
 
     // Default: case list
-    return <CaseList onSelectCase={handleSelectCase} />;
+    return <CaseList onSelectCase={handleSelectCase} hideDemoData={hideDemoData} />;
   };
 
   return (
@@ -310,6 +329,17 @@ export default function App() {
               {transparencyMode ? 'EO Operators On' : 'EO Operators Off'}
             </button>
           </div>
+
+          <div className="sidebar-nav-group">
+            <div className="sidebar-nav-label">Data</div>
+            <button
+              className={`sidebar-nav-item ${hideDemoData ? '' : 'active'}`}
+              onClick={toggleDemoData}
+            >
+              <Icon name={hideDemoData ? 'eye-off' : 'database'} size={16} />
+              {hideDemoData ? 'Demo Data Hidden' : 'Demo Data Visible'}
+            </button>
+          </div>
         </nav>
 
         {/* Footer */}
@@ -353,7 +383,7 @@ export default function App() {
             {VIEW_TITLES[view] || 'Khora'}
           </span>
           <div className="nav-spacer" />
-          {view === 'cases' && (
+          {view === 'cases' && !hideDemoData && (
             <button className="btn-primary btn-sm" onClick={() => handleSelectCase('case_001')}>
               <Icon name="plus" size={12} /> Open Demo Case
             </button>

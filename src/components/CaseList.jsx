@@ -98,13 +98,13 @@ const HOUSING_COLORS = {
   'Stably Housed':            'green',
 };
 
-export default function CaseList({ onSelectCase }) {
+export default function CaseList({ onSelectCase, hideDemoData = false }) {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('lastEvent');
   const [sortDir, setSortDir] = useState('desc');
 
   const filtered = useMemo(() => {
-    let cases = DEMO_CASES;
+    let cases = hideDemoData ? [] : DEMO_CASES;
     if (search.trim()) {
       const q = search.toLowerCase();
       cases = cases.filter(c =>
@@ -121,7 +121,7 @@ export default function CaseList({ onSelectCase }) {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return cases;
-  }, [search, sortField, sortDir]);
+  }, [search, sortField, sortDir, hideDemoData]);
 
   const handleSort = (field) => {
     if (sortField === field) {

@@ -352,8 +352,47 @@ function AccessTab() {
     { id: '@mchen:khora.us', name: 'M. Chen', role: 'Supervisor', status: 'active', fields: 60 },
   ];
 
+  // Claim status — in production this would come from AccessControl.getClaimStatus()
+  const [claimStatus] = useState({
+    claimable: true,
+    claimedBy: null,
+    createdBy: '@tkhan:khora.us',
+  });
+
   return (
     <div>
+      {/* Account Claim Status */}
+      <div className="card" style={{
+        marginBottom: 16,
+        background: claimStatus.claimedBy ? 'var(--green-dim)' : 'var(--gold-dim)',
+        border: `1px solid ${claimStatus.claimedBy ? 'rgba(61,214,140,.2)' : 'rgba(214,171,61,.2)'}`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Icon
+            name={claimStatus.claimedBy ? 'user-check' : 'user-plus'}
+            size={16}
+            color={claimStatus.claimedBy ? 'var(--green)' : 'var(--gold)'}
+          />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-0)' }}>
+              {claimStatus.claimedBy
+                ? `Account claimed by ${claimStatus.claimedBy}`
+                : 'Claimable Account'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--tx-2)' }}>
+              {claimStatus.claimedBy
+                ? 'This individual owns their data. Provider access is at their discretion.'
+                : `Profile created by ${claimStatus.createdBy || 'provider'}. When the individual claims this account, they become the sovereign owner and can revoke provider access.`}
+            </div>
+          </div>
+          {claimStatus.claimable && !claimStatus.claimedBy && (
+            <button className="btn-primary btn-sm">
+              <Icon name="key" size={12} /> Claim Account
+            </button>
+          )}
+        </div>
+      </div>
+
       <div style={{ marginBottom: 16 }}>
         <div className="section-header">
           <Icon name="users" size={14} color="var(--tx-2)" />
@@ -389,7 +428,7 @@ function AccessTab() {
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-0)' }}>Encryption Model</span>
         </div>
         <div style={{ fontSize: 12, color: 'var(--tx-2)', lineHeight: 1.6 }}>
-          Data is stored as encrypted blobs. Each room represents a permission structure.
+          Data is stored as encrypted blobs. Each vault represents a permission structure.
           Providers receive decryption credentials when granted access. Once revoked,
           providers can no longer decrypt any data — past or future.
           The individual controls all access grants.

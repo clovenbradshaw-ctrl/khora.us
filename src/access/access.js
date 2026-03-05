@@ -122,6 +122,60 @@ export const AccessControl = {
   },
 
   /**
+   * Mark a profile as claimable by the real individual.
+   * The creator sets this when they create a profile on someone's behalf.
+   */
+  async markClaimable(vaultRoomId) {
+    return await MatrixService.setState(vaultRoomId, EVT.ACCOUNT_CLAIM, '', {
+      claimable: true,
+      claimedBy: null,
+      createdBy: MatrixService.userId,
+      markedAt: new Date().toISOString(),
+    });
+  },
+
+  /**
+   * Get the claim status for a vault room.
+   */
+  async getClaimStatus(vaultRoomId) {
+    return await MatrixService.getState(vaultRoomId, EVT.ACCOUNT_CLAIM) || {
+      claimable: false,
+      claimedBy: null,
+    };
+  },
+
+  /**
+   * Claim an account — transfers ownership to the claimant.
+   * The claimant gets PL 100 (sovereign), original creator gets PL 50 (provider).
+   */
+  async claimAccount(vaultRoomId) {
+    const claimStatus = await this.getClaimStatus(vaultRoomId);
+    if (!claimStatus.claimable) {
+      throw new Error('This profile is not claimable');
+    }
+    if (claimStatus.claimedBy) {
+      throw new Error('This profile has already been claimed');
+    }
+
+    const claimantId = MatrixService.userId;
+    const creatorId = claimStatus.createdBy;
+
+    // Transfer power levels: claimant gets 100, creator demoted to 50
+    await MatrixService.setPowerLevels(vaultRoomId, {
+      [claimantId]: 100,
+      [creatorId]: 50,
+    });
+
+    // Update claim state
+    return await MatrixService.setState(vaultRoomId, EVT.ACCOUNT_CLAIM, '', {
+      claimable: false,
+      claimedBy: claimantId,
+      claimedAt: new Date().toISOString(),
+      createdBy: creatorId,
+    });
+  },
+
+  /**
    * Hard revoke — tombstone bridge, remove all grants for provider.
    */
   async revokeProvider(vaultRoomId, bridgeRoomId, providerUserId) {

@@ -461,6 +461,24 @@ export const MatrixService = {
     if (!_client) throw new Error('Not connected');
     return await _withRetry(() => _client.kick(roomId, userId, reason));
   },
+
+  /**
+   * Update power levels for specific users in a room.
+   * @param {Object} userLevels - { userId: powerLevel } map
+   */
+  async setPowerLevels(roomId, userLevels) {
+    if (!_client) throw new Error('Not connected');
+    const room = _client.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+
+    const plEvent = room.currentState.getStateEvents('m.room.power_levels', '');
+    const currentPl = plEvent ? plEvent.getContent() : { users: {} };
+    const users = { ...(currentPl.users || {}), ...userLevels };
+
+    return await _withRetry(() =>
+      _client.sendStateEvent(roomId, 'm.room.power_levels', { ...currentPl, users }, '')
+    );
+  },
 };
 
 // ── Internal helpers ────────────────────────────────────────────────
