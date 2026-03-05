@@ -365,7 +365,7 @@ function AccessTab() {
       <div className="card" style={{
         marginBottom: 16,
         background: claimStatus.claimedBy ? 'var(--green-dim)' : 'var(--gold-dim)',
-        border: `1px solid ${claimStatus.claimedBy ? 'rgba(61,214,140,.2)' : 'rgba(214,171,61,.2)'}`,
+        border: `1px solid ${claimStatus.claimedBy ? 'var(--green-dim)' : 'var(--gold-dim)'}`,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Icon

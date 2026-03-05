@@ -193,9 +193,9 @@ export default function TimelineView({ events = [], transparencyMode = false }) 
                     key={fieldKey}
                     style={{
                       padding: '8px 12px',
-                      background: isChanged ? 'rgba(96,165,250,0.08)' : 'var(--bg-3)',
+                      background: isChanged ? 'var(--blue-dim)' : 'var(--bg-3)',
                       borderRadius: 'var(--r-sm)',
-                      border: isChanged ? '1px solid rgba(96,165,250,0.2)' : '1px solid transparent',
+                      border: isChanged ? '1px solid var(--blue-dim)' : '1px solid transparent',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
