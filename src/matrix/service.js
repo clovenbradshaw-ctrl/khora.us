@@ -229,7 +229,9 @@ export const MatrixService = {
   // ── Room Creation ───────────────────────────────────────────────
 
   /**
-   * Create an encrypted room with optional initial state.
+   * Create a room with optional initial state.
+   * Encryption is only enabled when the SDK has crypto support initialised;
+   * otherwise the room is created unencrypted so timeline events can still be sent.
    */
   async createRoom(opts = {}) {
     const {
@@ -240,6 +242,13 @@ export const MatrixService = {
       isDirect = false,
     } = opts;
 
+    const hasCrypto = !!(_client?.isCryptoEnabled?.() || _client?.getCrypto?.());
+    const encryptionState = hasCrypto ? [{
+      type: 'm.room.encryption',
+      state_key: '',
+      content: { algorithm: 'm.megolm.v1.aes-sha2' },
+    }] : [];
+
     const createOpts = {
       name,
       invite,
@@ -247,11 +256,7 @@ export const MatrixService = {
       preset: 'private_chat',
       is_direct: isDirect,
       initial_state: [
-        {
-          type: 'm.room.encryption',
-          state_key: '',
-          content: { algorithm: 'm.megolm.v1.aes-sha2' },
-        },
+        ...encryptionState,
         ...initialState,
       ],
     };

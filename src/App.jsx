@@ -56,7 +56,15 @@ export default function App() {
   const [profileEvents, setProfileEvents] = useState([]);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  const loadClients = useCallback(async () => {
+  const loadClients = useCallback(async (optimisticClient) => {
+    // If a newly created client was passed, add it immediately so it appears
+    // in the list before the next Matrix sync round-trip completes.
+    if (optimisticClient) {
+      setClients(prev => {
+        if (prev.some(c => c.roomId === optimisticClient.roomId)) return prev;
+        return [...prev, optimisticClient];
+      });
+    }
     if (!MatrixService.isConnected) return;
     setClientsLoading(true);
     try {

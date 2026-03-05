@@ -74,7 +74,17 @@ export const ClientStore = {
       console.warn('Initial claim event failed (room may need sync):', err);
     }
 
-    return { roomId };
+    return {
+      roomId,
+      roomName: preferredName.trim(),
+      meta: {
+        preferred_name: preferredName.trim(),
+        legal_name: legalName?.trim() || '',
+        status,
+        created: now,
+        created_by: agent,
+      },
+    };
   },
 
   /**
