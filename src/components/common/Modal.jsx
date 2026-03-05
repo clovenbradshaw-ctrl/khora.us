@@ -9,12 +9,15 @@ import Icon from './Icon.jsx';
  * @param {boolean} fullscreen
  */
 export default function Modal({ open, onClose, title, fullscreen = false, children }) {
+  // Support both controlled (open prop) and uncontrolled (always open when mounted) usage
+  const isOpen = open === undefined ? true : open;
+
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') onClose?.();
   }, [onClose]);
 
   useEffect(() => {
-    if (open) {
+    if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
     }
@@ -22,9 +25,9 @@ export default function Modal({ open, onClose, title, fullscreen = false, childr
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [open, handleKeyDown]);
+  }, [isOpen, handleKeyDown]);
 
-  if (!open) return null;
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={(e) => {
@@ -47,7 +50,9 @@ export default function Modal({ open, onClose, title, fullscreen = false, childr
             </button>
           </div>
         )}
-        {children}
+        <div style={{ padding: '16px' }}>
+          {children}
+        </div>
       </div>
     </div>
   );

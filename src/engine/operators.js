@@ -107,4 +107,51 @@ export const EVT = Object.freeze({
   IDENTITY:     'io.khora.identity',
   BRIDGE_META:  'io.khora.bridge.meta',
   BRIDGE_REFS:  'io.khora.bridge.refs',
+
+  // Team
+  TEAM_META:         'io.khora.team.meta',
+  TEAM_MEMBERS:      'io.khora.team.members',
+  TEAM_SCHEMA:       'io.khora.team.schema',
+  TEAM_HIERARCHY:    'io.khora.team.hierarchy',
+  TEAM_TABLE_DEF:    'io.khora.team.table_def',
+  TEAM_TABLE_RECORD: 'io.khora.team.table_record',
+
+  // Resource
+  RESOURCE_TYPE:      'io.khora.resource.type',
+  RESOURCE_INVENTORY: 'io.khora.resource.inventory',
+  RESOURCE_ALLOC:     'io.khora.resource.alloc',
+  RESOURCE_EVENT:     'io.khora.resource.event',
+  RESOURCE_POLICY:    'io.khora.resource.policy',
+
+  // Schema / Forms
+  SCHEMA_FORM:    'io.khora.schema.form',
+  SCHEMA_FIELD:   'io.khora.schema.field',
+  SCHEMA_BINDING: 'io.khora.schema.binding',
+
+  // Governance
+  GOV_PROPOSAL: 'io.khora.gov.proposal',
+  GOV_RHYTHM:   'io.khora.gov.rhythm',
+
+  // Organization
+  ORG_ROSTER:   'io.khora.org.roster',
+  ORG_METADATA: 'io.khora.org.metadata',
 });
+
+// ── Resource categories ────────────────────────────────────────────
+export const RESOURCE_CATEGORIES = Object.freeze([
+  'housing', 'financial', 'transportation', 'food',
+  'health', 'employment', 'legal', 'education', 'general',
+]);
+
+// ── Governance constants ───────────────────────────────────────────
+export const CONSENT_MODES = Object.freeze(['lead_decides', 'majority', 'unanimous']);
+
+export const CONSENT_POSITIONS = Object.freeze([
+  'adopt_as_is', 'adopt_with_extension', 'needs_modification', 'cannot_adopt',
+]);
+
+export const PROPOSAL_STATUSES = Object.freeze([
+  'submitted', 'discussion', 'consent_round', 'resolved', 'adopted', 'blocked',
+]);
+
+export const PROPAGATION_LEVELS = Object.freeze(['required', 'standard', 'recommended', 'optional']);

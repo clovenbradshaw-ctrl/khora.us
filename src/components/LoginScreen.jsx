@@ -1,16 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 
 /**
- * LoginScreen — welcome + login with spinning dodecahedron.
+ * LoginScreen — Matrix authentication with homeserver auto-detection.
  *
- * In demo mode, accepts any credentials and enters the app.
+ * Default homeserver: matrix.org
+ * Auto-detects server from @user:server format.
+ * Links to Element for account creation.
  */
 export default function LoginScreen({ onLogin }) {
-  const [homeserver, setHomeserver] = useState('https://matrix.khora.us');
+  const [homeserver, setHomeserver] = useState('matrix.org');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const canvasRef = useRef(null);
+
+  // Auto-detect homeserver from username
+  const effectiveHs = (() => {
+    const userHost = username.includes(':') ? username.split(':').slice(1).join(':') : '';
+    return userHost || homeserver;
+  })();
 
   // Spinning dodecahedron animation
   useEffect(() => {
@@ -22,7 +32,6 @@ export default function LoginScreen({ onLogin }) {
     let frame = 0;
     let running = true;
 
-    // Dodecahedron vertices (projected to 2D)
     const phi = (1 + Math.sqrt(5)) / 2;
     const verts3d = [
       [1,1,1],[1,1,-1],[1,-1,1],[1,-1,-1],
@@ -47,7 +56,6 @@ export default function LoginScreen({ onLogin }) {
       const cosB = Math.cos(t * 0.7), sinB = Math.sin(t * 0.7);
 
       const projected = verts3d.map(([x, y, z]) => {
-        // Rotate Y then X
         let x1 = x * cosA - z * sinA;
         let z1 = x * sinA + z * cosA;
         let y1 = y * cosB - z1 * sinB;
@@ -56,7 +64,6 @@ export default function LoginScreen({ onLogin }) {
         return [w/2 + x1 * scale, h/2 + y1 * scale, z2];
       });
 
-      // Draw edges
       const goldColor = getComputedStyle(document.documentElement).getPropertyValue('--gold').trim() || '#c9a352';
       ctx.strokeStyle = goldColor;
       ctx.lineWidth = 1;
@@ -68,7 +75,6 @@ export default function LoginScreen({ onLogin }) {
         ctx.stroke();
       }
 
-      // Draw vertices
       ctx.globalAlpha = 0.8;
       ctx.fillStyle = goldColor;
       for (const [px, py] of projected) {
@@ -86,28 +92,18 @@ export default function LoginScreen({ onLogin }) {
     return () => { running = false; };
   }, []);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    // Demo mode — accept any credentials
-    setTimeout(() => {
-      onLogin({
-        userId: username ? `@${username}:khora.us` : '@demo:khora.us',
-        homeserver,
-        role: 'provider',
-      });
-    }, 600);
-  };
 
-  const handleDemoLogin = () => {
-    setLoading(true);
-    setTimeout(() => {
-      onLogin({
-        userId: '@demo:khora.us',
-        homeserver: 'https://matrix.khora.us',
-        role: 'provider',
-      });
-    }, 400);
+    try {
+      await onLogin(effectiveHs, username, password);
+    } catch (err) {
+      const msg = err.data?.error || err.message || 'Login failed';
+      setError(msg);
+      setLoading(false);
+    }
   };
 
   return (
@@ -120,24 +116,35 @@ export default function LoginScreen({ onLogin }) {
 
       <div className="login-card">
         <h2>Sign in</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="field-group">
-            <label>Homeserver</label>
-            <input
-              type="text"
-              value={homeserver}
-              onChange={(e) => setHomeserver(e.target.value)}
-              placeholder="https://matrix.example.com"
-            />
+        <p style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 16, lineHeight: 1.5 }}>
+          Khora is built on the Matrix network — the same encrypted platform that
+          powers Element. Sign in with your Matrix account.
+        </p>
+
+        {error && (
+          <div style={{
+            padding: '8px 12px', marginBottom: 12, borderRadius: 6,
+            background: 'var(--red-dim, #3a1c1c)', color: 'var(--red, #e55)', fontSize: 12,
+          }}>
+            {error}
           </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
           <div className="field-group">
             <label>Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="@user:server"
+              placeholder="@user:matrix.org"
+              autoComplete="username"
             />
+            {username.includes(':') && (
+              <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 2 }}>
+                Server detected: {effectiveHs}
+              </div>
+            )}
           </div>
           <div className="field-group">
             <label>Password</label>
@@ -146,12 +153,41 @@ export default function LoginScreen({ onLogin }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
+              autoComplete="current-password"
             />
           </div>
+
+          {/* Advanced: custom homeserver */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            style={{
+              background: 'none', border: 'none', color: 'var(--tx-3)',
+              fontSize: 11, cursor: 'pointer', padding: '4px 0', marginBottom: 4,
+            }}
+          >
+            {showAdvanced ? '▾ Hide advanced' : '▸ Advanced: custom homeserver'}
+          </button>
+
+          {showAdvanced && (
+            <div className="field-group">
+              <label>Homeserver</label>
+              <input
+                type="text"
+                value={homeserver}
+                onChange={(e) => setHomeserver(e.target.value)}
+                placeholder="matrix.org"
+              />
+              <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 2 }}>
+                Override auto-detection. Use any Matrix homeserver you trust.
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             className="btn-primary"
-            disabled={loading}
+            disabled={loading || !username || !password}
             style={{ width: '100%', padding: '12px', marginTop: 8 }}
           >
             {loading ? 'Connecting...' : 'Sign in'}
@@ -159,17 +195,18 @@ export default function LoginScreen({ onLogin }) {
         </form>
 
         <div style={{ textAlign: 'center', margin: '16px 0 8px', fontSize: 12, color: 'var(--tx-3)' }}>
-          or
+          Don't have an account?
         </div>
 
-        <button
-          onClick={handleDemoLogin}
+        <a
+          href="https://app.element.io/#/register"
+          target="_blank"
+          rel="noopener noreferrer"
           className="btn-ghost"
-          disabled={loading}
-          style={{ width: '100%', padding: '12px' }}
+          style={{ width: '100%', padding: '12px', display: 'block', textAlign: 'center', textDecoration: 'none' }}
         >
-          Enter Demo Mode
-        </button>
+          Create account on Element
+        </a>
 
         <div className="login-footer">
           Data sovereign. Matrix-native. Your keys, your data.
