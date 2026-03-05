@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import Icon from './common/Icon.jsx';
+import Modal from './common/Modal.jsx';
+import { ClientStore } from '../matrix/client-store.js';
 
 /**
  * CaseList — DataTable view of all individuals/cases.
@@ -98,13 +100,44 @@ const HOUSING_COLORS = {
   'Stably Housed':            'green',
 };
 
-export default function CaseList({ onSelectCase, hideDemoData = false }) {
+export default function CaseList({ onSelectCase, hideDemoData = false, clients = [], loading = false, onClientCreated }) {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('lastEvent');
   const [sortDir, setSortDir] = useState('desc');
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ preferredName: '', legalName: '', status: 'Intake' });
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    if (!createForm.preferredName.trim()) return;
+    setCreating(true);
+    try {
+      await ClientStore.createClient(createForm);
+      setShowCreate(false);
+      setCreateForm({ preferredName: '', legalName: '', status: 'Intake' });
+      onClientCreated?.();
+    } catch (err) {
+      console.error('Failed to create client:', err);
+    }
+    setCreating(false);
+  };
 
   const filtered = useMemo(() => {
     let cases = hideDemoData ? [] : DEMO_CASES;
+
+    // Merge real Matrix clients
+    const realCases = clients.map(c => ({
+      id: c.roomId,
+      name: c.meta?.preferred_name || c.roomName || 'Unknown',
+      status: c.meta?.status || 'Intake',
+      housing: c.meta?.housing_status || '—',
+      lastEvent: c.meta?.created || '',
+      worker: c.meta?.created_by?.replace(/:.*$/, '').replace(/^@/, '') || '',
+      claims: 0,
+      flags: [],
+    }));
+    cases = [...cases, ...realCases];
     if (search.trim()) {
       const q = search.toLowerCase();
       cases = cases.filter(c =>
@@ -154,6 +187,9 @@ export default function CaseList({ onSelectCase, hideDemoData = false }) {
         <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>
           {filtered.length} case{filtered.length !== 1 ? 's' : ''}
         </span>
+        <button className="btn-primary btn-sm" onClick={() => setShowCreate(true)}>
+          <Icon name="plus" size={12} /> New Client
+        </button>
       </div>
 
       {/* Table */}
@@ -227,10 +263,67 @@ export default function CaseList({ onSelectCase, hideDemoData = false }) {
         </div>
         {filtered.length === 0 && (
           <div className="dt-empty">
-            No cases match your search.
+            {loading ? 'Loading clients...' : 'No cases match your search.'}
           </div>
         )}
       </div>
+
+      {/* Create Client Modal */}
+      {showCreate && (
+        <Modal title="New Client" onClose={() => setShowCreate(false)}>
+          <form onSubmit={handleCreate}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-1)', display: 'block', marginBottom: 4 }}>
+                  Preferred Name *
+                </label>
+                <input
+                  type="text"
+                  value={createForm.preferredName}
+                  onChange={(e) => setCreateForm(f => ({ ...f, preferredName: e.target.value }))}
+                  placeholder="How the client prefers to be called"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-1)', display: 'block', marginBottom: 4 }}>
+                  Legal Name
+                </label>
+                <input
+                  type="text"
+                  value={createForm.legalName}
+                  onChange={(e) => setCreateForm(f => ({ ...f, legalName: e.target.value }))}
+                  placeholder="Full legal name (optional)"
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-1)', display: 'block', marginBottom: 4 }}>
+                  Status
+                </label>
+                <select
+                  value={createForm.status}
+                  onChange={(e) => setCreateForm(f => ({ ...f, status: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--border-0)', background: 'var(--bg-0)', color: 'var(--tx-0)' }}
+                >
+                  <option value="Intake">Intake</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                <button type="button" className="btn-ghost btn-sm" onClick={() => setShowCreate(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary btn-sm" disabled={creating || !createForm.preferredName.trim()}>
+                  {creating ? 'Creating...' : 'Create Client'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
