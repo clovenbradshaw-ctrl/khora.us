@@ -179,9 +179,9 @@ function FieldsTab({ stacks, transparencyMode, onObserve }) {
         const pct = Math.round((completedCount / sectionFields.length) * 100);
 
         return (
-          <div key={section.key} style={{ marginBottom: 20 }}>
+          <div key={section.key} style={{ marginBottom: 16 }}>
             <div className="section-header">
-              <Icon name={section.icon} size={14} color="var(--tx-2)" />
+              <Icon name={section.icon} size={13} color="var(--tx-3)" />
               {section.label}
               <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--tx-3)', fontFamily: 'var(--mono)' }}>
                 {completedCount}/{sectionFields.length} · {pct}%
@@ -189,10 +189,10 @@ function FieldsTab({ stacks, transparencyMode, onObserve }) {
             </div>
             {/* Completion bar */}
             <div style={{
-              height: 2,
+              height: 1.5,
               background: 'var(--border-0)',
               borderRadius: 1,
-              marginBottom: 8,
+              marginBottom: 4,
               overflow: 'hidden',
             }}>
               <div style={{
@@ -203,7 +203,7 @@ function FieldsTab({ stacks, transparencyMode, onObserve }) {
                 transition: 'width .3s ease',
               }} />
             </div>
-            <div className="stack">
+            <div className="field-stack">
               {sectionFields.map(field => (
                 <FieldCard
                   key={field.key}
