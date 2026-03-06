@@ -11,6 +11,7 @@ import { getField } from '../schema/fields.js';
  * Collapsed: single dense row with label, value, and actions.
  * Expanded: full claim stack history.
  * +: opens observation panel.
+ * Click row: opens observation panel for editing.
  */
 export default function FieldCard({ fieldKey, stack, transparencyMode = false, onObserve }) {
   const [expanded, setExpanded] = useState(false);
@@ -22,13 +23,22 @@ export default function FieldCard({ fieldKey, stack, transparencyMode = false, o
   const hasData = !!topClaim;
   const hasHistory = stack?.claims?.length > 1;
 
+  const handleRowClick = () => {
+    if (onObserve) {
+      onObserve(fieldKey, stack);
+    } else if (hasHistory) {
+      setExpanded(!expanded);
+    }
+  };
+
   return (
     <div className={`field-card${expanded ? ' field-card--expanded' : ''}${hasData ? '' : ' field-card--empty'}`}>
       {/* Single compact row: label + value + actions */}
       <div
         className="field-card-row"
-        onClick={hasHistory ? () => setExpanded(!expanded) : undefined}
-        style={hasHistory ? { cursor: 'pointer' } : undefined}
+        onClick={handleRowClick}
+        style={{ cursor: onObserve ? 'pointer' : (hasHistory ? 'pointer' : undefined) }}
+        title={onObserve ? (hasData ? 'Click to edit' : 'Click to add data') : undefined}
       >
         <span className="field-card-label">
           {fieldDef?.label || fieldKey}
@@ -56,14 +66,22 @@ export default function FieldCard({ fieldKey, stack, transparencyMode = false, o
 
         <span className="field-card-actions">
           {hasHistory && (
-            <Icon
-              name={expanded ? 'chevron-up' : 'chevron-down'}
-              size={12}
-              color="var(--tx-3)"
-            />
+            <button
+              type="button"
+              className="btn-icon"
+              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+              title={expanded ? 'Collapse history' : 'Expand history'}
+            >
+              <Icon
+                name={expanded ? 'chevron-up' : 'chevron-down'}
+                size={12}
+                color="var(--tx-3)"
+              />
+            </button>
           )}
           {onObserve && (
             <button
+              type="button"
               className="btn-icon"
               onClick={(e) => { e.stopPropagation(); onObserve(fieldKey, stack); }}
               title="Add observation"

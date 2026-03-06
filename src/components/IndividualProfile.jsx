@@ -51,9 +51,13 @@ export default function IndividualProfile({
     setObsStack(stack || stacks.get(fieldKey) || { claims: [], conLinks: {} });
   }, [stacks]);
 
-  const handleSave = useCallback((fieldKey, newClaim, ops) => {
+  const handleSave = useCallback(async (fieldKey, newClaim, ops) => {
     const claimEvent = buildClaimEvent(agent, agentRole, ops, `${agentRole} updated ${fieldKey}`);
-    onAddEvent(claimEvent);
+    try {
+      await onAddEvent(claimEvent);
+    } catch (err) {
+      console.error('Failed to save observation:', err);
+    }
     setObsField(null);
     setObsStack(null);
   }, [agent, agentRole, onAddEvent]);

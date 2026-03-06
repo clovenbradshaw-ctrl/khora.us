@@ -35,8 +35,8 @@ export default function ObservationPanel({
   const fieldDef = getField(fieldKey);
   const topClaim = currentStack?.claims?.find(c => c.phase !== 'superseded');
 
-  const [value, setValue] = useState('');
-  const [mode, setMode] = useState(null);
+  const [value, setValue] = useState(topClaim?.value ?? '');
+  const [mode, setMode] = useState(topClaim?.mode ?? null);
   const [note, setNote] = useState('');
   const [held, setHeld] = useState(false);
 
@@ -138,6 +138,7 @@ export default function ObservationPanel({
         <div className="mode-options">
           {Object.entries(MODE_PROMPTS).map(([modeKey, prompt]) => (
             <button
+              type="button"
               key={modeKey}
               className={`mode-option ${mode === modeKey ? 'selected' : ''}`}
               onClick={() => setMode(modeKey)}
@@ -192,8 +193,9 @@ export default function ObservationPanel({
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button
+          type="button"
           className="btn btn-primary"
           onClick={handleSave}
           disabled={!value || !mode}
