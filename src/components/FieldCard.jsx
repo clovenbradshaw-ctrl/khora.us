@@ -6,17 +6,11 @@ import { resolvePhase, getActiveClaims } from '../engine/claims.js';
 import { getField } from '../schema/fields.js';
 
 /**
- * FieldCard — displays a single field with its claim stack.
+ * FieldCard — compact field row that expands into a basin for observations.
  *
- * Header: section icon, field label, phase badge.
- * Body: active claim value, agent, timestamp, mode.
- * Expand: full claim stack history.
+ * Collapsed: single dense row with label, value, and actions.
+ * Expanded: full claim stack history.
  * +: opens observation panel.
- *
- * @param {string} fieldKey
- * @param {object} stack - { claims, isHeld, isContested, conLinks }
- * @param {boolean} transparencyMode - show operator tags
- * @param {function} onObserve - callback to open observation panel
  */
 export default function FieldCard({ fieldKey, stack, transparencyMode = false, onObserve }) {
   const [expanded, setExpanded] = useState(false);
@@ -25,81 +19,80 @@ export default function FieldCard({ fieldKey, stack, transparencyMode = false, o
   const phase = resolvePhase(stack);
   const activeClaims = getActiveClaims(stack);
   const topClaim = activeClaims[0];
+  const hasData = !!topClaim;
+  const hasHistory = stack?.claims?.length > 1;
 
   return (
-    <div className="field-card">
-      {/* Header */}
-      <div className="field-card-header">
-        {fieldDef?.sectionIcon && (
-          <Icon name={fieldDef.sectionIcon} size={14} color="var(--tx-2)" />
-        )}
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-0)' }}>
+    <div className={`field-card${expanded ? ' field-card--expanded' : ''}${hasData ? '' : ' field-card--empty'}`}>
+      {/* Single compact row: label + value + actions */}
+      <div
+        className="field-card-row"
+        onClick={hasHistory ? () => setExpanded(!expanded) : undefined}
+        style={hasHistory ? { cursor: 'pointer' } : undefined}
+      >
+        <span className="field-card-label">
           {fieldDef?.label || fieldKey}
         </span>
+
         {phase && <PhaseBadge phase={phase} />}
         {transparencyMode && topClaim?.operator && (
           <OperatorBadge operator={topClaim.operator} />
         )}
 
-        <div className="field-card-actions">
-          {stack?.claims?.length > 1 && (
-            <button
-              className="btn-icon"
-              onClick={() => setExpanded(!expanded)}
-              title={expanded ? 'Collapse history' : 'Expand history'}
-            >
-              <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color="var(--tx-2)" />
-            </button>
+        <span className="field-card-value">
+          {hasData ? (topClaim.value || '—') : (
+            <span className="field-card-empty">—</span>
+          )}
+        </span>
+
+        {hasData && (
+          <span className="field-card-meta">
+            <span>{formatAgent(topClaim.agent)}</span>
+            <span className="field-card-meta-sep">·</span>
+            <span>{formatTime(topClaim.timestamp)}</span>
+            <ModeBadge mode={topClaim.mode} />
+          </span>
+        )}
+
+        <span className="field-card-actions">
+          {hasHistory && (
+            <Icon
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={12}
+              color="var(--tx-3)"
+            />
           )}
           {onObserve && (
             <button
               className="btn-icon"
-              onClick={() => onObserve(fieldKey, stack)}
+              onClick={(e) => { e.stopPropagation(); onObserve(fieldKey, stack); }}
               title="Add observation"
             >
-              <Icon name="plus" size={14} color="var(--blue)" />
+              <Icon name="plus" size={12} color="var(--blue)" />
             </button>
           )}
+        </span>
+      </div>
+
+      {/* Note line */}
+      {hasData && topClaim.note && !expanded && (
+        <div className="field-card-note">{topClaim.note}</div>
+      )}
+
+      {/* Expanded: full claim stack */}
+      {expanded && stack?.claims && (
+        <div className="field-card-detail">
+          {topClaim?.note && (
+            <div className="field-card-note" style={{ marginBottom: 6 }}>{topClaim.note}</div>
+          )}
+          <ClaimStack
+            claims={stack.claims}
+            conLinks={stack.conLinks || {}}
+            transparencyMode={transparencyMode}
+            expanded={true}
+          />
         </div>
-      </div>
-
-      {/* Body — top claim */}
-      <div className="field-card-body">
-        {topClaim ? (
-          <div>
-            <div style={{ fontSize: 14, color: 'var(--tx-0)', fontWeight: 500, marginBottom: 4 }}>
-              {topClaim.value || '—'}
-            </div>
-            <div className="claim-meta">
-              <span>{formatAgent(topClaim.agent)}</span>
-              <span>·</span>
-              <span>{formatTime(topClaim.timestamp)}</span>
-              <ModeBadge mode={topClaim.mode} />
-            </div>
-            {topClaim.note && (
-              <div style={{ fontSize: 11, color: 'var(--tx-3)', fontStyle: 'italic', marginTop: 4 }}>
-                {topClaim.note}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--tx-3)', fontStyle: 'italic' }}>
-            No data recorded.
-          </div>
-        )}
-
-        {/* Expanded: full stack */}
-        {expanded && stack?.claims && (
-          <div style={{ marginTop: 12, borderTop: '1px solid var(--border-0)', paddingTop: 8 }}>
-            <ClaimStack
-              claims={stack.claims}
-              conLinks={stack.conLinks || {}}
-              transparencyMode={transparencyMode}
-              expanded={true}
-            />
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
