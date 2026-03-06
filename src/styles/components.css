@@ -422,6 +422,11 @@
   gap: 6px;
   padding: 6px 10px;
   min-height: 32px;
+  transition: background .15s;
+}
+
+.field-card-row:hover {
+  background: var(--bg-3);
 }
 
 .field-card-label {

@@ -35,8 +35,8 @@ export default function ObservationPanel({
   const fieldDef = getField(fieldKey);
   const topClaim = currentStack?.claims?.find(c => c.phase !== 'superseded');
 
-  const [value, setValue] = useState('');
-  const [mode, setMode] = useState(null);
+  const [value, setValue] = useState(topClaim?.value ?? '');
+  const [mode, setMode] = useState(topClaim?.mode ?? null);
   const [note, setNote] = useState('');
   const [held, setHeld] = useState(false);
 
