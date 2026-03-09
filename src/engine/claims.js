@@ -86,7 +86,7 @@ function processOp(stacks, op, event) {
       // Case creation marker — no field state change
       break;
 
-    case OP.DES: {
+    case OP.SIG: {
       if (!field) break;
       const stack = ensureStack(stacks, field);
       if (op.claimId && op.value !== undefined) {
@@ -100,7 +100,7 @@ function processOp(stacks, op, event) {
           timestamp:  event.date,
           note:       op.note || null,
           eventId:    event.id,
-          operator:   OP.DES,
+          operator:   OP.SIG,
         });
       }
       break;
@@ -304,11 +304,11 @@ export function inferOperator(field, currentStack, newClaim, held = false) {
   const ops = [];
   const activeClaims = currentStack?.claims?.filter(c => c.phase !== PHASES.SUPERSEDED) || [];
 
-  // No prior claims → DES then INS
+  // No prior claims → SIG then INS
   if (!currentStack || currentStack.claims.length === 0) {
     const claimId = makeClaimId(field);
     ops.push({
-      op: OP.DES,
+      op: OP.SIG,
       field,
       claimId,
       value:  newClaim.value,

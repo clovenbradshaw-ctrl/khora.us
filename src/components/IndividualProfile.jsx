@@ -293,7 +293,7 @@ function ActivityTab({ events, transparencyMode }) {
   const sorted = [...events].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const OP_COLORS = {
-    NUL: 'var(--red)', DES: 'var(--teal)', INS: 'var(--green)',
+    NUL: 'var(--red)', SIG: 'var(--teal)', INS: 'var(--green)',
     SEG: 'var(--orange)', CON: 'var(--blue)', SYN: 'var(--purple)',
     ALT: 'var(--gold)', SUP: 'var(--pink)', REC: 'var(--teal)',
   };

@@ -2,7 +2,7 @@
  * EO (Epistemic Operators) — the nine-operator vocabulary.
  *
  * Three triads:
- *   Identity  (NUL · DES · INS)  — What exists?
+ *   Identity  (NUL · SIG · INS)  — What exists?
  *   Structure (SEG · CON · SYN)  — How do things relate?
  *   Time      (ALT · SUP · REC)  — How do things change?
  *
@@ -14,7 +14,7 @@
 
 export const OP = Object.freeze({
   NUL: 'NUL',
-  DES: 'DES',
+  SIG: 'SIG',
   INS: 'INS',
   SEG: 'SEG',
   CON: 'CON',
@@ -28,7 +28,7 @@ export const OP = Object.freeze({
 
 export const OP_META = Object.freeze({
   NUL: { greek: 'ν', verb: 'Nullify',     desc: 'Brings the record out of void. Precondition for all subsequent operators.', color: 'red' },
-  DES: { greek: 'θ', verb: 'Designate',   desc: 'First designation of a field. Draws the distinction that makes the field exist.', color: 'teal' },
+  SIG: { greek: 'θ', verb: 'Signal',      desc: 'First signal of a field. Marks the significance that makes the field exist.', color: 'teal' },
   INS: { greek: 'α', verb: 'Instantiate',  desc: 'Inserts a claim into the stack.', color: 'green' },
   SEG: { greek: 'κ', verb: 'Segment',     desc: 'Draws a cut between claim types before a consequential move.', color: 'orange' },
   CON: { greek: 'ε', verb: 'Connect',     desc: 'Establishes supersession and provenance links.', color: 'blue' },
@@ -41,7 +41,7 @@ export const OP_META = Object.freeze({
 // ── Triads ──────────────────────────────────────────────────────────
 
 export const OPERATOR_TRIADS = Object.freeze({
-  identity:  { label: 'Identity',  desc: 'What exists?',           ops: [OP.NUL, OP.DES, OP.INS], color: 'teal' },
+  identity:  { label: 'Identity',  desc: 'What exists?',           ops: [OP.NUL, OP.SIG, OP.INS], color: 'teal' },
   structure: { label: 'Structure', desc: 'How do things relate?',  ops: [OP.SEG, OP.CON, OP.SYN], color: 'blue' },
   time:      { label: 'Time',     desc: 'How do things change?',  ops: [OP.ALT, OP.SUP, OP.REC], color: 'purple' },
 });

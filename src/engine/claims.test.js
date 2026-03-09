@@ -23,9 +23,9 @@ describe('replayTo', () => {
     expect(result.size).toBe(0);
   });
 
-  it('DES + INS → settled claim', () => {
+  it('SIG + INS → settled claim', () => {
     const events = [makeEvent([
-      { op: 'DES', field: 'housing', claimId: 'h1', value: 'Emergency Shelter', agent: '@jreyes:srv', role: 'Intake', mode: 'declared', note: 'Client self-reported.' },
+      { op: 'SIG', field: 'housing', claimId: 'h1', value: 'Emergency Shelter', agent: '@jreyes:srv', role: 'Intake', mode: 'declared', note: 'Client self-reported.' },
       { op: 'INS', field: 'housing', claimId: 'h1' },
     ])];
 
@@ -36,14 +36,14 @@ describe('replayTo', () => {
     expect(stack.claims).toHaveLength(1);
     expect(stack.claims[0].value).toBe('Emergency Shelter');
     expect(stack.claims[0].phase).toBe('settled');
-    expect(stack.claims[0].operator).toBe('DES');
+    expect(stack.claims[0].operator).toBe('SIG');
     expect(stack.claims[0].mode).toBe('declared');
   });
 
   it('ALT → prior claim superseded, new claim settled', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'housing', claimId: 'h1', value: 'Emergency Shelter', mode: 'declared' },
+        { op: 'SIG', field: 'housing', claimId: 'h1', value: 'Emergency Shelter', mode: 'declared' },
         { op: 'INS', field: 'housing', claimId: 'h1' },
       ], { date: '2025-01-01T00:00:00Z' }),
       makeEvent([
@@ -66,7 +66,7 @@ describe('replayTo', () => {
   it('SUP → contested state', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'safety', claimId: 's1', value: 'No concerns', agent: '@worker:srv', mode: 'observed' },
+        { op: 'SIG', field: 'safety', claimId: 's1', value: 'No concerns', agent: '@worker:srv', mode: 'observed' },
         { op: 'INS', field: 'safety', claimId: 's1' },
       ], { date: '2025-01-01T00:00:00Z' }),
       makeEvent([
@@ -87,7 +87,7 @@ describe('replayTo', () => {
   it('SUP with heldNote → held state', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'income', claimId: 'i1', value: '$1200', mode: 'declared' },
+        { op: 'SIG', field: 'income', claimId: 'i1', value: '$1200', mode: 'declared' },
         { op: 'INS', field: 'income', claimId: 'i1' },
       ], { date: '2025-01-01T00:00:00Z' }),
       makeEvent([
@@ -106,7 +106,7 @@ describe('replayTo', () => {
   it('respects targetDate — ignores events after target', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
+        { op: 'SIG', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
         { op: 'INS', field: 'housing', claimId: 'h1' },
       ], { date: '2025-01-01T00:00:00Z' }),
       makeEvent([
@@ -124,7 +124,7 @@ describe('replayTo', () => {
   it('SYN collapses SUP state', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'safety', claimId: 's1', value: 'No concerns', mode: 'observed' },
+        { op: 'SIG', field: 'safety', claimId: 's1', value: 'No concerns', mode: 'observed' },
         { op: 'INS', field: 'safety', claimId: 's1' },
       ], { date: '2025-01-01T00:00:00Z' }),
       makeEvent([
@@ -147,7 +147,7 @@ describe('replayTo', () => {
   it('CON records supersession links', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
+        { op: 'SIG', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
         { op: 'INS', field: 'housing', claimId: 'h1' },
       ], { date: '2025-01-01T00:00:00Z' }),
       makeEvent([
@@ -164,9 +164,9 @@ describe('replayTo', () => {
   it('handles multiple fields independently', () => {
     const events = [
       makeEvent([
-        { op: 'DES', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
+        { op: 'SIG', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
         { op: 'INS', field: 'housing', claimId: 'h1' },
-        { op: 'DES', field: 'income', claimId: 'i1', value: '$500', mode: 'declared' },
+        { op: 'SIG', field: 'income', claimId: 'i1', value: '$500', mode: 'declared' },
         { op: 'INS', field: 'income', claimId: 'i1' },
       ]),
     ];
@@ -181,13 +181,13 @@ describe('replayTo', () => {
 // ── inferOperator ───────────────────────────────────────────────────
 
 describe('inferOperator', () => {
-  it('returns DES + INS for empty stack', () => {
+  it('returns SIG + INS for empty stack', () => {
     const ops = inferOperator('housing', null, {
       value: 'Shelter', agent: '@worker:srv', role: 'Intake', mode: 'declared',
     });
 
     expect(ops).toHaveLength(2);
-    expect(ops[0].op).toBe('DES');
+    expect(ops[0].op).toBe('SIG');
     expect(ops[1].op).toBe('INS');
     expect(ops[0].value).toBe('Shelter');
   });
@@ -258,7 +258,7 @@ describe('resolvePhase', () => {
 
   it('returns settled for simple stack', () => {
     const events = [makeEvent([
-      { op: 'DES', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
+      { op: 'SIG', field: 'housing', claimId: 'h1', value: 'Shelter', mode: 'declared' },
       { op: 'INS', field: 'housing', claimId: 'h1' },
     ])];
     const result = replayTo(events);
@@ -270,7 +270,7 @@ describe('resolvePhase', () => {
 
 describe('buildClaimEvent', () => {
   it('constructs valid event payload', () => {
-    const ops = [{ op: 'DES', field: 'housing', claimId: 'h1', value: 'Shelter' }];
+    const ops = [{ op: 'SIG', field: 'housing', claimId: 'h1', value: 'Shelter' }];
     const event = buildClaimEvent('@worker:srv', 'Intake', ops, 'Housing designation');
 
     expect(event.id).toBeTruthy();
