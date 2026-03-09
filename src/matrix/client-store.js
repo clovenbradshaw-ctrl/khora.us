@@ -46,14 +46,14 @@ export const ClientStore = {
 
     const roomId = result.room_id;
 
-    // Build initial claim event with NUL + DES/INS ops (matching seed-events pattern)
+    // Build initial claim event with NUL + SIG/INS ops (matching seed-events pattern)
     const ops = [
       { op: 'NUL', field: null, note: 'Case brought out of void.' },
 
-      { op: 'DES', field: 'preferred_name', claimId: `pn_${Date.now().toString(36)}`, value: preferredName.trim(), agent, role: 'Provider', mode: 'declared', note: 'Intake — client name.' },
+      { op: 'SIG', field: 'preferred_name', claimId: `pn_${Date.now().toString(36)}`, value: preferredName.trim(), agent, role: 'Provider', mode: 'declared', note: 'Intake — client name.' },
       { op: 'INS', field: 'preferred_name', claimId: `pn_${Date.now().toString(36)}` },
 
-      { op: 'DES', field: 'case_status', claimId: `cs_${Date.now().toString(36)}`, value: status, agent, role: 'Provider', mode: 'declared' },
+      { op: 'SIG', field: 'case_status', claimId: `cs_${Date.now().toString(36)}`, value: status, agent, role: 'Provider', mode: 'declared' },
       { op: 'INS', field: 'case_status', claimId: `cs_${Date.now().toString(36)}` },
     ];
 
@@ -61,7 +61,7 @@ export const ClientStore = {
     if (legalName?.trim()) {
       const lnId = `ln_${Date.now().toString(36)}`;
       ops.splice(3, 0,
-        { op: 'DES', field: 'legal_name', claimId: lnId, value: legalName.trim(), agent, role: 'Provider', mode: 'declared' },
+        { op: 'SIG', field: 'legal_name', claimId: lnId, value: legalName.trim(), agent, role: 'Provider', mode: 'declared' },
         { op: 'INS', field: 'legal_name', claimId: lnId },
       );
     }

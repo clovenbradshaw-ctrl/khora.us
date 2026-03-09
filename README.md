@@ -318,7 +318,7 @@ Every claim event blob contains an `ops` array. Each operation is expressed as `
 | **ALT** | Transitions state within something that already exists | Status changes, phase transitions, value updates on an existing claim |
 | **CON** | Creates a relationship between two things | An allocation linking a client to a resource; a bridge linking client to provider |
 | **SEG** | Bounds or classifies something within a defined range or category | Assigning someone to a priority tier; placing a value in a cohort |
-| **DES** | Names or defines something | Creating a field definition; labeling a new concept; writing a resource type |
+| **SIG** | Signals or marks significance of something | Signaling a field into existence; marking the significance of a new concept; writing a resource type |
 | **SYN** | Merges or deduplicates | Resolving two records as the same entity; combining divergent data |
 | **SUP** | Holds two conflicting interpretations simultaneously without forcing resolution | A contested claim; a field where two orgs use incompatible definitions |
 | **REC** | Evolves a schema or structural definition itself | Versioning a field definition; changing propagation rules; schema migration |
@@ -335,7 +335,7 @@ Operators appear inside claim event blobs as an `ops` array. A single blob can c
     { op: "NUL", field: null, note: "Case brought out of void." },
 
     // Define what this housing claim contains
-    { op: "DES", field: "housing", claimId: "h1",
+    { op: "SIG", field: "housing", claimId: "h1",
       value: "Emergency Shelter", agent: "@jreyes:server",
       role: "Intake Worker", mode: "declared",
       note: "Client self-reported at intake." },
@@ -352,7 +352,7 @@ Operators appear inside claim event blobs as an `ops` array. A single blob can c
     { op: "ALT", field: "housing", claimId: "h1", phase: "superseded" },
 
     // Define the new claim
-    { op: "DES", field: "housing", claimId: "h2",
+    { op: "SIG", field: "housing", claimId: "h2",
       value: "Transitional Housing", agent: "@kim:server",
       role: "Case Manager", mode: "observed", supersedes: "h1",
       note: "Moved to transitional housing 2024-09-14." },
@@ -385,9 +385,9 @@ Operators appear inside claim event blobs as an `ops` array. A single blob can c
 
 **Every meaningful mutation emits ops.** If you're writing code that changes a claim's state and you're not producing ops, that's a design error. The ops array is the audit trail, the basis for replay, and the complete record of why current state is what it is.
 
-**Use `ClaimEngine.buildOps(action, field, claim, context)` rather than constructing ops by hand.** Hand-rolled ops that skip steps — forgetting the paired `DES+INS` when inserting, or forgetting to `ALT` the prior claim before superseding — will cause replay to produce incorrect state.
+**Use `ClaimEngine.buildOps(action, field, claim, context)` rather than constructing ops by hand.** Hand-rolled ops that skip steps — forgetting the paired `SIG+INS` when inserting, or forgetting to `ALT` the prior claim before superseding — will cause replay to produce incorrect state.
 
-**The operators constrain schema evolution.** When fields or definitions change, those changes are expressed as `REC` or `DES` ops in governance timelines. Every change is an explicit, attributable operation — not a silent database migration.
+**The operators constrain schema evolution.** When fields or definitions change, those changes are expressed as `REC` or `SIG` ops in governance timelines. Every change is an explicit, attributable operation — not a silent database migration.
 
 ---
 
@@ -543,7 +543,7 @@ Users can have accounts on any Matrix server. hyphae.social is the network's anc
 | **ALT** | Something transitions state |
 | **CON** | A relationship is formed between two things |
 | **SEG** | Something is classified into a bounded category |
-| **DES** | Something is named or defined |
+| **SIG** | Something is signaled into significance |
 | **SYN** | Two things are merged or deduplicated |
 | **SUP** | Two conflicting interpretations are held simultaneously |
 | **REC** | A definition or schema structure itself changes |
