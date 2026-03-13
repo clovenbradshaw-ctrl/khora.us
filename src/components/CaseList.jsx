@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import Icon from './common/Icon.jsx';
 import Modal from './common/Modal.jsx';
 import { ClientStore } from '../matrix/client-store.js';
+import { UserTableStore } from '../matrix/user-table-store.js';
 
 /**
  * CaseList — DataTable view of all individuals/cases.
@@ -100,7 +101,7 @@ const HOUSING_COLORS = {
   'Stably Housed':            'green',
 };
 
-export default function CaseList({ onSelectCase, hideDemoData = false, clients = [], loading = false, onClientCreated }) {
+export default function CaseList({ onSelectCase, hideDemoData = false, clients = [], loading = false, onClientCreated, userTableRoomId = null, userRecords = [] }) {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('lastEvent');
   const [sortDir, setSortDir] = useState('desc');
@@ -113,11 +114,23 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
     if (!createForm.preferredName.trim()) return;
     setCreating(true);
     try {
-      const created = await ClientStore.createClient(createForm);
-      setShowCreate(false);
-      setCreateForm({ preferredName: '', legalName: '', status: 'Intake' });
-      // Pass the newly created client so the parent can optimistically update
-      onClientCreated?.(created);
+      if (userTableRoomId) {
+        // Create as a record in the user table
+        const { recordId, data } = await UserTableStore.createRecord(userTableRoomId, {
+          preferred_name: createForm.preferredName.trim(),
+          legal_name: createForm.legalName?.trim() || '',
+          status: createForm.status,
+        });
+        setShowCreate(false);
+        setCreateForm({ preferredName: '', legalName: '', status: 'Intake' });
+        onClientCreated?.({ recordId, data });
+      } else {
+        // Fallback: create as a client_record room
+        const created = await ClientStore.createClient(createForm);
+        setShowCreate(false);
+        setCreateForm({ preferredName: '', legalName: '', status: 'Intake' });
+        onClientCreated?.(created);
+      }
     } catch (err) {
       console.error('Failed to create client:', err);
     }
@@ -138,7 +151,19 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
       claims: 0,
       flags: [],
     }));
-    cases = [...cases, ...realCases];
+    // Merge user table records
+    const tableRecords = userRecords.map(r => ({
+      id: r.recordId,
+      name: cleanName(r.preferred_name || 'Unknown'),
+      status: r.status || 'Intake',
+      housing: r.housing_status || '—',
+      lastEvent: r.created || '',
+      worker: r.created_by?.replace(/:.*$/, '').replace(/^@/, '') || '',
+      claims: 0,
+      flags: [],
+      source: 'user_table',
+    }));
+    cases = [...cases, ...realCases, ...tableRecords];
     if (search.trim()) {
       const q = search.toLowerCase();
       cases = cases.filter(c =>
@@ -155,7 +180,7 @@ export default function CaseList({ onSelectCase, hideDemoData = false, clients =
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return cases;
-  }, [search, sortField, sortDir, hideDemoData, clients]);
+  }, [search, sortField, sortDir, hideDemoData, clients, userRecords]);
 
   const handleSort = (field) => {
     if (sortField === field) {

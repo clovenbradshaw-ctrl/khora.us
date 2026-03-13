@@ -17,6 +17,7 @@ export const ROOM_TYPES = Object.freeze({
   NETWORK:        'network',
   CLIENT_RECORD:  'client_record',
   TEAM:           'team',
+  USER_TABLE:     'user_table',
   UNKNOWN:        'unknown',
 });
 
@@ -30,6 +31,7 @@ export const ROOM_COLORS = Object.freeze({
   network:        'green',
   client_record:  'teal',
   team:           'purple',
+  user_table:     'teal',
   unknown:        'orange',
 });
 
@@ -43,6 +45,7 @@ export const ROOM_LABELS = Object.freeze({
   network:        'Network Room',
   client_record:  'Personal Record',
   team:           'Team Room',
+  user_table:     'User Table',
   unknown:        'Unknown',
 });
 
@@ -55,6 +58,7 @@ const ACCOUNT_TYPE_MAP = {
   metrics:        'metrics',
   network:        'network',
   team:           'team',
+  user_table:     'user_table',
 };
 
 /**

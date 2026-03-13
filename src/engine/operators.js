@@ -116,6 +116,10 @@ export const EVT = Object.freeze({
   TEAM_TABLE_DEF:    'io.khora.team.table_def',
   TEAM_TABLE_RECORD: 'io.khora.team.table_record',
 
+  // User Table
+  USER_TABLE_DEF:    'io.khora.user.table_def',
+  USER_TABLE_RECORD: 'io.khora.user.table_record',
+
   // Resource
   RESOURCE_TYPE:      'io.khora.resource.type',
   RESOURCE_INVENTORY: 'io.khora.resource.inventory',
