@@ -11,6 +11,7 @@ import ResourcesView from './components/ResourcesView.jsx';
 import GovernanceView from './components/GovernanceView.jsx';
 import { MatrixService } from './matrix/service.js';
 import { ClientStore } from './matrix/client-store.js';
+import { UserTableStore } from './matrix/user-table-store.js';
 import { ClaimStore } from './matrix/claim-store.js';
 import { EVT } from './engine/operators.js';
 import SEED_EVENTS from './data/seed-events.js';
@@ -56,25 +57,53 @@ export default function App() {
   const [profileEvents, setProfileEvents] = useState([]);
   const [profileLoading, setProfileLoading] = useState(false);
 
+  // ── User table data ────────────────────────────────────────────
+  const [userTableRoomId, setUserTableRoomId] = useState(null);
+  const [userRecords, setUserRecords] = useState([]);
+
+  const loadUserTable = useCallback(async () => {
+    if (!MatrixService.isConnected) return;
+    try {
+      const tables = await UserTableStore.findTables();
+      if (tables.length > 0) {
+        const table = tables[0];
+        setUserTableRoomId(table.roomId);
+        const records = await UserTableStore.loadRecords(table.roomId);
+        setUserRecords(records);
+      }
+    } catch (err) {
+      console.error('Failed to load user table:', err);
+    }
+  }, []);
+
   const loadClients = useCallback(async (optimisticClient) => {
     // If a newly created client was passed, add it immediately so it appears
     // in the list before the next Matrix sync round-trip completes.
     if (optimisticClient) {
-      setClients(prev => {
-        if (prev.some(c => c.roomId === optimisticClient.roomId)) return prev;
-        return [...prev, optimisticClient];
-      });
+      if (optimisticClient.recordId) {
+        // User table record — optimistically add to userRecords
+        setUserRecords(prev => {
+          if (prev.some(r => r.recordId === optimisticClient.recordId)) return prev;
+          return [...prev, optimisticClient.data];
+        });
+      } else {
+        setClients(prev => {
+          if (prev.some(c => c.roomId === optimisticClient.roomId)) return prev;
+          return [...prev, optimisticClient];
+        });
+      }
     }
     if (!MatrixService.isConnected) return;
     setClientsLoading(true);
     try {
       const result = await ClientStore.loadClients();
       setClients(result);
+      await loadUserTable();
     } catch (err) {
       console.error('Failed to load clients:', err);
     }
     setClientsLoading(false);
-  }, []);
+  }, [loadUserTable]);
 
   const handleAddEvent = useCallback((event) => {
     setEvents(prev => [...prev, event]);
@@ -327,6 +356,8 @@ export default function App() {
         clients={clients}
         loading={clientsLoading}
         onClientCreated={loadClients}
+        userTableRoomId={userTableRoomId}
+        userRecords={userRecords}
       />
     );
   };
