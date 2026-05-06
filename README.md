@@ -16,6 +16,8 @@ The full design lives in [SPEC.md](./SPEC.md); local persistence (the changelog,
 - **Discovery is social.** Registries are rooms. Anyone can run one.
 - **Forking is native.** Fork an app room, fork a data room, fork a registry. Audit trail comes free.
 - **P2P is automatic.** Bootstrap chooses the transport (federation, embedded homeserver, direct WebRTC, LAN, sneakernet). Apps see one capability API and inherit P2P without any per-app work.
+- **Easy app building.** Tier 0 publishes a dashboard composed from blocks as a real app — no code. Tier 1 scaffolds a working app from a wizard in under five minutes (`npx create-khora-app`). Hand-coded apps get the same primitives.
+- **One write contract.** Every `append` — from any tier, any tool, any UI — passes the same ten guarantees: schema validation, EO-triple injection, permission check, local-first changelog, idempotency, encryption, read-your-writes, P2P propagation, audit. Data added through any room is saved correctly, or bootstrap is broken.
 
 ## Repo layout
 

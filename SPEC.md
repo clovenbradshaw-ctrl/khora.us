@@ -89,6 +89,20 @@ The `source` block is **optional**. When present, it lets a verifier walk: manif
 
 This is `INS △` at site = app room, resolution = release.
 
+#### 3.2.1 Layout-renderer manifest variant
+
+Tier 0 layout-only apps (§19.1) use an additive manifest variant. Instead of `code: { primary_uri, sha256, ... }`, the manifest carries a built-in renderer reference:
+
+```json
+"code": {
+  "renderer": "khora-layout-renderer",
+  "layout_room": "!data-room:server",
+  "layout_state_key": ""
+}
+```
+
+Bootstrap recognizes the `renderer` field, instantiates the named built-in (no `mxc://` fetch, no `sha256` verification — there is no fetched code), and points it at the layout state event in the named data room. The trust chain reduces to "does this user know the renderer ID we ship?" Built-in renderer IDs are part of bootstrap's release surface; adding new ones is a bootstrap-version bump, not an app concern.
+
 ### 3.3 Large bundles
 
 If `size_bytes` exceeds the homeserver media cap (typically 50–100MB) or a published threshold, manifest specifies:
@@ -203,6 +217,8 @@ Every data event embeds the EO triple in `content.eo`:
 ```
 
 Schema validates `payload`; the EO triple is uniform across all schemas. This means generic tools (timeline visualizers, snapshot diffs, EO operator counters) work over any data room, regardless of payload schema.
+
+The full set of guarantees a successful write satisfies — schema validation, EO-triple injection, permission check, local-first changelog, idempotency, audit, P2P propagation — is in §20 (the write contract). Apps do not implement these; bootstrap enforces them on every `append`.
 
 ### 4.3 Permissions live on the data room
 
@@ -363,6 +379,8 @@ Bootstrap rejects calls outside the app's mount scope. The app cannot read token
 
 **Transport-transparent.** The same call returns the same shape whether the data arrives via federation, an embedded homeserver, a direct WebRTC channel, the LAN, or a sneakernet import. P2P is bootstrap's responsibility (§18); apps are not aware of the transport stack.
 
+**Write-correct.** Every `append` satisfies the ten guarantees in §20 — schema validation, EO-triple handling, permission check, local-first changelog write, server confirmation with idempotency, encryption when applicable, read-your-writes, P2P propagation, and audit-log capture. The contract spans every entry path (hand-coded apps, Tier 0 dashboards, Tier 1 scaffolds, `<ImportView>`, CLI tools — see §19).
+
 The local storage substrate that backs `read`, `subscribe`, and the time-travel variants is specified in [STORAGE.md](./STORAGE.md). The cross-app option vocabulary is fixed in §17.4. The transport diagnostic semantics are in §18.5.
 
 ### 6.3 Capability scoping
@@ -480,13 +498,23 @@ khora/
 │   ├── eo.feed.v1.json
 │   └── eo.eodb.v1.json
 │
-└── tools/                     # CLI tools
-    ├── publish.ts             # upload app code, write manifest, tag release
-    ├── publish-from-ci.ts     # CI-side publish (§15.2)
-    ├── fork.ts                # create fork app room
-    ├── snapshot.ts            # tag snapshot at any scope
-    ├── mount.ts               # add a mount to a user room
-    └── verify.ts              # verify a running app against its manifest
+├── tools/                     # CLI tools
+│   ├── publish.ts             # upload app code, write manifest, tag release
+│   ├── publish-from-ci.ts     # CI-side publish (§15.2)
+│   ├── fork.ts                # create fork app room
+│   ├── snapshot.ts            # tag snapshot at any scope
+│   ├── mount.ts               # add a mount to a user room
+│   ├── verify.ts              # verify a running app against its manifest
+│   └── create-khora-app/      # `npx create-khora-app <name>` (§19.2)
+│
+└── templates/                 # starter repos for create-khora-app
+    ├── table/                 # <TableView> over a chosen schema
+    ├── kanban/                # <KanbanView>
+    ├── calendar/              # <CalendarView>
+    ├── graph/                 # <GraphView>
+    ├── timeline/              # Horizon-style timeline
+    ├── blocks/                # composable @khora/ui blocks
+    └── custom/                # bare scaffold; bring your own components
 ```
 
 The layout shows the **final state**. Everything under `bootstrap/`, `tools/`, and the published schemas in `schemas/` and `data-schemas/` are Phase 0+ deliverables; see the corresponding READMEs for current status.
@@ -1188,3 +1216,176 @@ These are first-class scenarios, not edge cases. The protocol's claim to "EO-nat
 ### 18.8 EO frame note
 
 P2P sync changes *who* is on the substrate, not *what* the substrate is. REC ↬ remains the canonical timeline; INS △ remains an event append. The DEF frame for execution (the app room) and the DEF frame for development (the repo, §15) operate identically whether routed via a federated homeserver or a direct peer link. The center of gravity stays in the events, not in any transport.
+
+---
+
+## 19. Easy app building
+
+Four tiers of "easy," each layered on existing primitives. Tiers 0 and 1 are concrete deliverables for the next pass; Tiers 2 and 3 are roadmap. The line we hold throughout: **bootstrap renders blocks, scaffolds emit code, anything beyond that is the app author's job.** Easy app building is not a no-code platform.
+
+### 19.1 Tier 0 — Layout-only apps (no code)
+
+An app whose "code" is a layout. The user composes blocks in the `@khora/ui` block composer (§17.2.4), writes an `eo.layout.dashboard` state event into a data room, and publishes the result as an app. No build, no manifest hash, no JS, no repo.
+
+The mechanics:
+
+1. The user opens the block composer against a data room they have edit rights on.
+2. They drag in `<TableBlock>`, `<MetricBlock>`, headings, columns. Each configuration choice is a property of the layout; nothing executes.
+3. **Save layout** writes an `eo.layout.dashboard` state event to the data room (well-known schema `eo.layout.v1`, §17.2.4).
+4. **Publish as app** creates a new app room with a manifest of a special form:
+
+```json
+{
+  "type": "m.room.app.manifest",
+  "state_key": "v1.0.0",
+  "content": {
+    "version": "1.0.0",
+    "code": {
+      "renderer": "khora-layout-renderer",
+      "layout_room": "!data-room:server",
+      "layout_state_key": ""
+    },
+    "accepts_schemas": ["eo.layout.v1"],
+    "released_at": "...",
+    "released_by": "@user:server"
+  }
+}
+```
+
+Bootstrap recognizes the `renderer` field and instantiates a built-in renderer (`khora-layout-renderer`) pointed at the layout event. No `mxc://` fetch, no `sha256` to verify — there is no fetched code. The manifest's trust chain reduces to "does this user know the renderer ID we ship?"
+
+Layout-only apps are forkable, registry-listable, mountable, snapshot-able, and P2P-syncable like any other app. The "code" is just data, which means **a non-developer can produce a real Khora app** — shareable to colleagues, embeddable in instance spaces (§14.4), versioned by the layout's state-event history.
+
+Tier 0 is largely already enabled by §17.2.4. Adding it requires:
+
+- A "Publish dashboard as app" flow in the bootstrap UI (§16, extension to §16.5).
+- The `khora-layout-renderer` shipping with bootstrap as a built-in.
+- A manifest schema variant accepting `code: { renderer, layout_room, layout_state_key }` instead of `code: { primary_uri, sha256, ... }`. This is an additive change to `m.room.app.manifest` (§3.2).
+
+### 19.2 Tier 1 — Scaffolds via `create-khora-app`
+
+```
+npx create-khora-app my-tool
+```
+
+Walks the user through:
+
+- **View kind** — `table` / `kanban` / `calendar` / `graph` / `timeline` / `blocks` / `custom`. Each preset wires `<TableView>` / `<KanbanView>` / etc. from `@khora/ui` (§17.2.1).
+- **Data schema** — pick an existing well-known schema (`eo.case.v1`, `eo.feed.v1`, `eo.corpus.v1`, `eo.layout.v1`, …) or scaffold a fresh one (`eo.<name>.v1`). The scaffold generator emits a starter `m.room.data_schema` declaration with placeholder event types.
+- **Permissions** — pick from the standard set (`read_data`, `append_data`, `subscribe_data`); the wizard refuses to grant more than the schema's `min_pl` allows.
+- **Publishing** — GitHub Actions workflow (default), manual via `tools/publish.ts`, or both.
+
+Output: a minimal repo containing
+
+```
+my-tool/
+├── khora.json              # SPEC §16.5
+├── package.json
+├── App.tsx                 # imports from @khora/ui
+├── index.html
+├── .github/workflows/
+│   └── publish.yml         # SPEC §15.2
+└── README.md
+```
+
+Idea → mounted app in under five minutes. The scaffold imports `@khora/ui` and writes via the capability API, so every write inherits the §20 contract automatically.
+
+Deliverables:
+
+- `tools/create-khora-app/` — the CLI itself.
+- `templates/<view-kind>/` — one starter repo per view preset.
+- A "view kind catalog" in `tools/README.md` mapping kinds to the `@khora/ui` components they wrap.
+
+### 19.3 Tier 2 — `khora dev` (outlook)
+
+Local development loop. Hot-reloads from a localhost source, runs the bootstrap with an embedded homeserver, mounts a sandbox data room seeded with synthetic events matching the chosen schema. No local Matrix install needed; no remote homeserver needed for prototyping. Publishing is `khora publish`. Slated post-Phase 7, alongside the embedded-homeserver work in Phase 8 (§18.3).
+
+### 19.4 Tier 3 — In-bootstrap web IDE (outlook)
+
+Fork an app, edit its source in a Monaco-style editor inside bootstrap, preview live, publish as a fork — without ever leaving the browser. WebContainer or equivalent. Removes the toolchain entirely. Significant build; pays off after the suite is established.
+
+### 19.5 Out of scope
+
+Held firm:
+
+- **Vendor integrations in scaffolds.** Templates emit code that imports `@khora/ui`; they do not bundle Airtable / GCal / OAuth / n8n. Apps that want those add them themselves (§17.5).
+- **Server-side workflows from Tier 0 dashboards.** Layout blocks render and read; they do not invoke server logic. A user who wants buttons that run code writes a Tier 1+ app.
+- **No-code schema editing in production.** Tier 1's wizard scaffolds a *starter* schema. Evolving a schema in use goes through `m.room.data_schema_migration` (§4.4) deliberately, not through a casual UI.
+
+The line between "easy app building" and "no-code platform" is real. Each tier expands what users can do without writing code; none of them lets users redefine what counts as an event.
+
+---
+
+## 20. The write contract
+
+Every `append()` (§6.2) — whether from a hand-coded app, a Tier 0 dashboard, a Tier 1 scaffold, an `@khora/ui` form, an import tool, or a CLI — produces an event with the same correctness guarantees. This section names them so any write path can be tested against the same checklist.
+
+The contract makes a strong promise: **data added through any room is saved correctly, regardless of which UI added it.** Apps cannot opt out, cannot loosen, cannot shortcut.
+
+### 20.1 Guarantees
+
+For every `append(roomId, eventType, content)`, bootstrap MUST, in order:
+
+1. **Validate the schema.** Fetch the room's active `m.room.data_schema` (cached per STORAGE §3.5). Reject if `eventType` is not declared, or if `content.payload` does not validate against the declared payload schema. No raw event types: every write goes through a declared schema.
+
+2. **Inject or verify the EO triple.** If `content.eo` is absent, derive `operator` from the schema's `event_types[].operator` declaration for `eventType`; default `site` and `resolution` from the schema, allow caller override. If `content.eo` is present, verify `operator` matches the schema's declaration. The triple is mandatory in the persisted event (§4.2).
+
+3. **Check permissions.** The user MUST have at least the schema's declared `min_pl` for `eventType` in the data room AND the mount's declared `permissions` (§6.3) MUST include `append`. Reject before any network or local write.
+
+4. **Local changelog first.** Append to `events` (STORAGE §3.1, §4.1) at the next `local_seq` with a tentative event ID; update `state_current` (if state) and `indexes_live` per the declared materializers (STORAGE §7); resolve the `append` promise immediately. The local cache is the source of truth for the session.
+
+5. **Send to Matrix.** PUT the event with a transaction ID derived from the local event ID. On 2xx, replace the tentative event ID with the server-assigned one and rewrite the changelog row in place. On 4xx, mark the local event as `failed` and surface a write-error to the calling app. On network error, retry with exponential backoff (capped, every attempt visible in the capability audit log §17.1).
+
+6. **Encrypt if the room is encrypted.** Plaintext stays in the local `decrypted` store (STORAGE §10.3); only ciphertext flows to peers. Megolm key rotation follows Matrix rules; bootstrap never lets plaintext escape the iframe-host boundary.
+
+7. **Read-your-writes.** Any `read` / `readState` / `queryIndex` issued by the same iframe AFTER the `append` promise resolves MUST observe the new event, regardless of whether `/sync` has echoed it back.
+
+8. **Idempotency.** Replays of the same transaction ID are no-ops (Matrix-native). Apps that retry their own writes do not double-append.
+
+9. **Propagation.** Once the homeserver accepts the event, federation and any active P2P transports (§18) fan it out. Other peers' caches receive and apply per the same materializer rules. STORAGE invariants §13.1 (determinism) and §13.3 (refetchability) hold.
+
+10. **Audit.** Every successful write is recorded in the capability audit log (§17.1) with `(room_id, event_id, timestamp, app_room_id, app_manifest_event_id, transaction_id)`. Any data event in any room can be traced to the exact app version that produced it.
+
+### 20.2 The contract spans every entry path
+
+The same ten guarantees apply whether the write came from:
+
+| Path | How it reaches `append` |
+|---|---|
+| Hand-coded app | Direct `postMessage` call |
+| Tier 0 layout (dashboard composer) | Block composer's own `append` of the layout state event |
+| Tier 1 scaffold | Generated form components in `@khora/ui` calling `append` |
+| `@khora/ui` `<RecordDetailDrawer>` / `<TableView>` edits | Component-level `append` |
+| `<ImportView>` (CSV / JSONL) | Bulk loop of `append` per row |
+| `tools/publish.ts` writing manifests / releases | `append` over the same API |
+| P2P-received write merged in | Inbound transport ingests through the same validator chain |
+
+There is no privileged write path. Bootstrap's own writes (mount events, snapshot events, layout publishing) go through the same contract as app writes.
+
+### 20.3 Failure surfaces
+
+Apps must be ready for `append` to fail. The contract enumerates the fail modes:
+
+| Error | When |
+|---|---|
+| `SchemaUnknown` | Data room has no `m.room.data_schema` state event |
+| `EventTypeNotDeclared` | `eventType` not listed in the schema's `event_types` |
+| `PayloadInvalid` | Payload fails JSON-Schema validation |
+| `OperatorMismatch` | `content.eo.operator` conflicts with the schema declaration |
+| `InsufficientPL` | User's PL is below the schema's `min_pl` for the type |
+| `PermissionDenied` | Mount permissions don't include `append` |
+| `NetworkUnavailable` (recoverable) | Queued and retried; visible in audit log |
+| `Forbidden` (terminal) | Server refused; surfaced to app |
+| `Conflict` (rare) | DAG conflict during P2P merge; STORAGE §10.1 path |
+
+Apps that ignore failure surfaces are buggy by definition. Tier 1 scaffolds wire default error UI; Tier 0 layouts surface failures in the composer before publish.
+
+### 20.4 Testing the contract
+
+The contract is testable as a property suite. The Phase 0 fuzz harness (STORAGE §13) extends to write-side properties:
+
+- Generate a random schema; generate random payloads; assert that every payload either validates and is appended, or is rejected before reaching the homeserver.
+- Generate concurrent writes from multiple synthetic peers; assert that the merged changelog satisfies determinism (§13.1), refetchability (§13.3), and time-travel exactness (§13.4).
+- Replay any room's changelog through `tools/verify.ts`; assert that materialized state matches what the live cache holds.
+
+A write that violates any §20.1 guarantee is a bootstrap bug, not an app bug. The contract is bootstrap's promise — apps trust it the way they trust the iframe sandbox. Every write through every room is saved correctly, or the bootstrap itself is broken and we hear about it.
