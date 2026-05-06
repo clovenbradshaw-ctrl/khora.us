@@ -1,0 +1,18 @@
+{
+  "name": "@khora/hydration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "khora.hydration.v1 bundle and .khr external file format (SPEC §21)",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./bundle": "./src/bundle.js",
+    "./file": "./src/file.js",
+    "./crypto": "./src/crypto.js"
+  },
+  "bin": {
+    "khora-hyd": "src/cli.js"
+  },
+  "files": ["src"]
+}

@@ -10,12 +10,14 @@ CLI tools for operating on the Khora protocol. Each tool reads/writes Matrix eve
 | `snapshot.ts` | Tag a snapshot at app, data, or session scope | §5.2 |
 | `mount.ts` | Subscribe a user to an (app, data) pair by writing `eo.user.mount` to their user room | §5.1, §14.2 |
 | `verify.ts` | Verify a running iframe app's loaded code matches its manifest's `sha256`. Also walks the optional `source` block: manifest → repo at commit → CI build log. Used by the §20 fuzz harness to assert determinism over a room's changelog | §3.2, §15.5, §20.4 |
-| `hydration.ts` (`khora-hyd`) | CLI wrapper over the `exportHydration` / `importHydration` capability API: produce and consume external `.khr` hydration files for disaster recovery, air-gap provisioning, cold storage, and cross-org handoff. Subcommands: `export`, `import`, `inspect` (header-only, no key needed), `verify` (signature + structure, no decryption). Supports passphrase / hardware-key (WebAuthn PRF) / Shamir n-of-m split key modes | §21.6, §21.7 |
+| `hydration/` (`khora-hyd`) | CLI + library implementation of the `exportHydration` / `importHydration` capability surface: produce and consume external `.khr` hydration files for disaster recovery, air-gap provisioning, cold storage, and cross-org handoff. Subcommands: `export`, `import`, `inspect` (header-only, no key needed), `verify` (signature + structure, no decryption). Currently implements passphrase mode (Argon2id → AES-256-GCM) and Ed25519 signing; hardware-key (WebAuthn PRF) and Shamir n-of-m split modes are reserved per spec and reject with a clear error. Lives at `tools/hydration/` as `@khora/hydration` (package). | §21.6, §21.7 |
 | `create-khora-app/` | `npx create-khora-app <name>` — Tier 1 scaffold generator. Walks a wizard (view kind / schema / permissions / publish path), emits a starter repo against `@khora/ui` with `khora.json`, `App.tsx`, and `.github/workflows/publish.yml` | §19.2 |
 
 ## Status
 
-Empty. These tools will be written alongside the phases that need them — `publish.ts`, `publish-from-ci.ts`, and `verify.ts` are Phase 1 prerequisites; `mount.ts` arrives in Phase 3; `snapshot.ts` and `hydration.ts` in Phase 4 (both depend on the snapshot / hydration work); `fork.ts` in Phase 5; `create-khora-app/` lands once `@khora/ui` extraction (§17.7 step 17b) is far enough along to scaffold against.
+Mostly empty. These tools will be written alongside the phases that need them — `publish.ts`, `publish-from-ci.ts`, and `verify.ts` are Phase 1 prerequisites; `mount.ts` arrives in Phase 3; `snapshot.ts` in Phase 4; `fork.ts` in Phase 5; `create-khora-app/` lands once `@khora/ui` extraction (§17.7 step 17b) is far enough along to scaffold against.
+
+`hydration/` is a working implementation of the SPEC §21 bundle and external-file format with passphrase mode + Ed25519 signing. The CLI runs end-to-end (`khora-hyd export | inspect | import | verify`); the library is reusable from the eventual bootstrap shell. Phase 4 work will wire it into the capability API (`exportHydration` / `importHydration`) and the storage panel surface.
 
 ## View kind catalog (`create-khora-app`)
 

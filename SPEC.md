@@ -1519,7 +1519,7 @@ Three key modes:
 | **Hardware key** | HKDF-SHA256 over the WebAuthn PRF extension output |
 | **Split** (optional) | Shamir n-of-m over GF(256); each share is a small `.khr.share` with its own header |
 
-The file uses the `khora.hydration.v1` envelope (§21.4) wrapped as `khora.hydration.v1.khr` with a plaintext header (format, version, key mode, KDF parameters, scope, `key_fingerprint`, `payload_sha256`, claimed counts, schema versions) followed by AES-256-GCM ciphertext over the bundle, with the header in GCM AAD. An optional Ed25519 signature trails the ciphertext. The header is plaintext so a recipient who *lacks* the key can still answer "what kind of file is this, who claims to have produced it, and what scope does it cover?" without exposing the payload.
+The file uses the `khora.hydration.v1` envelope (§21.4) wrapped as `khora.hydration.v1.khr` with a plaintext header (format, version, key mode, KDF parameters, scope, `key_fingerprint`, `payload_sha256`, claimed counts, schema versions) followed by an AES-GCM nonce, AES-256-GCM ciphertext over the bundle (header bound into the GCM AAD), and an optional Ed25519 signature. The header is plaintext so a recipient who *lacks* the key can still answer "what kind of file is this, who claims to have produced it, and what scope does it cover?" without exposing the payload.
 
 `key_fingerprint` is a public 8-byte SHA-256 prefix of the derived key — non-sensitive, used to match a held key to a stored file before attempting decryption. Wrong key fails fast and explicit at fingerprint-compare; the file never enters the rest of the import pipeline.
 
