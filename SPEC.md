@@ -259,8 +259,10 @@ Three snapshot scopes:
 | Scope | Event type | Captures |
 |---|---|---|
 | App | `m.room.app.release` (in app room) | A code version |
-| Data | `eo.case.snapshot` (in data room) | A point in the data timeline |
+| Data | Schema-declared snapshot event type, e.g. `eo.case.snapshot` for `eo.case.v1` (in data room) | A point in the data timeline |
 | Session | `eo.user.snapshot` (in user room) | Mounts, prefs, scroll position, app+data event IDs at the moment |
+
+The data-snapshot event type is **schema-specific**: each `m.room.data_schema` (§4.1) declares one event type marked `operator: DEF` to serve as the snapshot. Generic tooling reads the EO triple uniformly; the type name varies.
 
 A session snapshot:
 
@@ -303,20 +305,65 @@ Lives at a stable origin (e.g. `app.michael.tld`). Single source of executable t
 
 ### 6.2 Capability API
 
+The full set of methods bootstrap exposes via postMessage. This is the authoritative list — STORAGE.md and §17.4 elaborate on backing storage and option semantics, but every method below is part of §6.2.
+
 ```typescript
-// Calls the app makes via postMessage to bootstrap:
-read(roomId: string, eventType: string, filter?: object): Promise<Event[]>
-readState(roomId: string, eventType: string, stateKey: string): Promise<StateEvent>
-append(roomId: string, eventType: string, content: object): Promise<EventId>
-subscribe(roomId: string, eventType: string, callback: (e: Event) => void): Subscription
-resolveMedia(mxcUri: string): Promise<Blob>
-snapshot(label: string): Promise<EventId>
-restore(snapshotEventId: string): Promise<void>
+// --- Live queries (current state) ---
+read(roomId, eventType, filter?): Promise<Event[]>
+readState(roomId, eventType, stateKey): Promise<StateEvent>
+queryIndex(roomId, indexId, key?): Promise<IndexResult>
+
+// --- Time-traveled queries (state at an event) ---
+readAt(roomId, eventId, eventType, filter?): Promise<Event[]>
+readStateAt(roomId, eventId, eventType, stateKey): Promise<StateEvent>
+queryIndexAt(roomId, eventId, indexId, key?): Promise<IndexResult>
+
+// --- Writes ---
+append(roomId, eventType, content): Promise<EventId>
+
+// --- Subscriptions (live tail) ---
+subscribe(roomId, eventType, callback): Subscription
+subscribeIndex(roomId, indexId, callback): Subscription
+
+// --- Replay (deterministic walk over a range) ---
+replay(roomId, fromEventId, toEventId, callback): void
+
+// --- Media ---
+resolveMedia(mxcUri): Promise<Blob>
+
+// --- Snapshots (DEF at a chosen scope) ---
+//   scope ∈ {"app", "data", "session"}; see §5.2 for the three scopes.
+snapshot(label, scope): Promise<EventId>
+restore(snapshotEventId): Promise<void>
+listSnapshots(scope, roomId?): Promise<SnapshotMetadata[]>
+
+// --- Standard cross-app options (§17.4) ---
+//   key drawn from the frozen vocabulary in §17.4; persisted in user room.
+getOption<T>(key): Promise<T>
+setOption<T>(key, value): Promise<void>
+subscribeOption<T>(key, callback): Subscription
+
+// --- Transport diagnostic (§18.5) ---
+//   Read-only. Apps may surface but must not branch semantics on it.
+getTransport(): Promise<TransportInfo>
+getTransportFor(roomId): Promise<TransportInfo>
+
+type SnapshotMetadata = {
+  event_id: EventId
+  scope: "app" | "data" | "session"
+  room_id: RoomId
+  label: string | null
+  taken_at: number
+  taken_by: UserId
+  pinned: boolean
+}
 ```
 
-Bootstrap rejects calls outside the app's mount scope. App cannot read tokens, cannot reach unmounted rooms, cannot widen permissions. App can be killed by closing the iframe.
+Bootstrap rejects calls outside the app's mount scope. The app cannot read tokens, cannot reach unmounted rooms, cannot widen permissions. The app can be killed by closing the iframe.
 
-The local storage substrate that backs `read`, `subscribe`, and the time-travel variants is specified separately in [STORAGE.md](./STORAGE.md). That document also defines additional methods (`readAt`, `queryIndex`, `queryIndexAt`, `subscribeIndex`, `replay`) that bootstrap exposes once the changelog/checkpoints layer is in place.
+**Transport-transparent.** The same call returns the same shape whether the data arrives via federation, an embedded homeserver, a direct WebRTC channel, the LAN, or a sneakernet import. P2P is bootstrap's responsibility (§18); apps are not aware of the transport stack.
+
+The local storage substrate that backs `read`, `subscribe`, and the time-travel variants is specified in [STORAGE.md](./STORAGE.md). The cross-app option vocabulary is fixed in §17.4. The transport diagnostic semantics are in §18.5.
 
 ### 6.3 Capability scoping
 
@@ -418,9 +465,14 @@ khora/
 │   ├── m.room.app.manifest.json
 │   ├── m.room.app.release.json
 │   ├── m.room.data_schema.json
+│   ├── m.room.data_schema_migration.json
 │   ├── m.room.registry.json
+│   ├── m.room.registry.entry.json
+│   ├── m.room.instance.json
 │   ├── eo.user.mount.json
-│   └── eo.user.snapshot.json
+│   ├── eo.user.snapshot.json
+│   ├── eo.user.preferences.v1.json
+│   └── khora.json              # repo-side config for create-from-repo (§16.5)
 │
 ├── data-schemas/              # well-known data schemas
 │   ├── eo.case.v1.json
@@ -430,18 +482,21 @@ khora/
 │
 └── tools/                     # CLI tools
     ├── publish.ts             # upload app code, write manifest, tag release
+    ├── publish-from-ci.ts     # CI-side publish (§15.2)
     ├── fork.ts                # create fork app room
     ├── snapshot.ts            # tag snapshot at any scope
     ├── mount.ts               # add a mount to a user room
     └── verify.ts              # verify a running app against its manifest
 ```
 
+The layout shows the **final state**. Everything under `bootstrap/`, `tools/`, and the published schemas in `schemas/` and `data-schemas/` are Phase 0+ deliverables; see the corresponding READMEs for current status.
+
 ---
 
 ## 10. Phased implementation
 
 **Phase 0 — Protocol freeze (1 week)**
-Lock §3, §4, §5, §6.2 schemas. Write JSON schemas in `schemas/`. Regression tests against example events. No code yet.
+Lock the schemas for §3 (app rooms), §4 (data rooms), §5 (user rooms), §6.2 (capability API), §14.4 (`m.room.instance`), §15.5 (manifest `source` block), and §17.4 (`eo.user.preferences.v1`). Define `khora.json` (§16.5). Write JSON schemas in `schemas/`. Regression tests against example events. No code yet.
 
 **Phase 1 — Bootstrap MVP (2 weeks)**
 Auth, manifest fetch, hash verification, iframe creation, capability API for `read` and `subscribe` only. No write path. No snapshots. Mount one trivial demo app from a hardcoded room.
@@ -464,6 +519,12 @@ The old single-app Khora becomes Khora-CM running on the new bootstrap. Vault/br
 **Phase 7 — Port EO///DB, eoReader, Anchorage (3+ weeks)**
 Each gets its own app room, declares schema compat. EO///DB's nine-operator fold becomes a generic schema operating on any EO data room.
 
+**Phase 8 — Direct P2P transports (3 weeks)**
+Embedded homeserver (Conduit-WASM or equivalent), WebRTC data channel, signaling-room discovery. Capability API gains `getTransport` / `getTransportFor` (§18.5). Apps require no changes; existing apps inherit P2P automatically.
+
+**Phase 9 — Local and offline transports (2 weeks)**
+mDNS LAN discovery, sneakernet export/import, full offline-first audit pass. Closes out §18 surface.
+
 ---
 
 ## 11. Constraints, gaps, known unknowns
@@ -473,7 +534,7 @@ Each gets its own app room, declares schema compat. EO///DB's nine-operator fold
 - **Authenticated media (MSC3916)** changed the game in late 2024. Bootstrap must use `/_matrix/client/v1/media/download/...` with `Authorization` header, not the deprecated unauthenticated endpoints. mxc:// resolution is a privileged operation that only bootstrap performs; apps receive `Blob` URLs.
 - **Federation lag.** A manifest event in a remote room may not have propagated when bootstrap tries to read it. Retry with backoff; surface the wait.
 - **Schema versioning** is the place this design will hurt first. Treat breaking changes as new rooms. Do not try to be clever about in-place schema migration in v1.
-- **Homeserver SPOF.** Mirror critical app rooms to a second homeserver. The protocol supports this naturally (federation); we just have to actually do it.
+- **Homeserver SPOF.** Mirror critical app rooms to a second homeserver. The protocol supports this naturally (federation); we just have to actually do it. P2P transports (§18) close the rest of the gap once Phase 8 ships — embedded homeservers and direct WebRTC let users keep working when no remote homeserver is reachable.
 - **Discovery is social, not technical.** Registries are rooms. Whose registry counts is a governance question, not a protocol question. This is correct (Ostrom), but it means there's no out-of-the-box "app store" — building trust around specific registries is part of the work.
 
 ---
@@ -726,7 +787,7 @@ Each app card:
 khora-cm                                    [stable v1.4.0]
 Khora Case Management
 Sovereign case management for journalists and lawyers.
-↳ accepts: eo.case.v1, eo.case.v2
+↳ accepts: eo.case.v1
 ↳ source: github.com/michael/khora • commit a1b2c3d
 [ Install ] [ Pin version ] [ Fork ]
 ```
@@ -861,6 +922,8 @@ Recognizing them as one verb with arguments is what keeps the UI from sprawling 
 
 ## 17. Standard surfaces and shared component library
 
+**Status:** §17.1 is normative for the reference bootstrap — the listed chrome surfaces are part of the trust boundary and bootstrap MUST expose them. §17.2–§17.4 are recommended conventions, not protocol requirements: alternative bootstraps may diverge from the `@khora/ui` component vocabulary and the standard option keys, but apps that adopt them gain cross-app consistency for free. §17.5 enumerates what is explicitly out of scope.
+
 EO-DB (`clovenbradshaw-ctrl/EO-DB`) is the source of truth for what these surfaces look like in practice. Its component set — universal views, block composition, EO-aware controls, schema management, collaboration — proves out the patterns that every Khora app benefits from. This section lifts those patterns into two layers: **bootstrap-provided surfaces** (free for every app) and the **`@khora/ui` library** (opt-in by import).
 
 The principle: anything that is generic over (a) the EO triple, (b) data-room schemas, or (c) Matrix room mechanics belongs in one of these layers. Anything app-specific stays in the app.
@@ -874,9 +937,10 @@ Available to every mount without app code. Bootstrap renders these in chrome aro
 | Member / power-level viewer | Who's in the data room and at what PL | §4.3 |
 | Schema viewer | The active `m.room.data_schema` for the mounted data room | §4.1 |
 | Snapshot history (3-lane) | App releases × data snapshots × user pins | §16.9 |
-| Capability audit log | Every `read` / `append` / `subscribe` the app has made, filterable | §16.11, STORAGE §3.7 |
+| Capability audit log | Every `read` / `append` / `subscribe` the app has made, filterable. Same surface as the audit log entry in the settings drawer (§16.11); rendered once, reachable from both the mount chrome and settings | §16.11, STORAGE §3.7 |
 | Storage usage panel | Per-room IndexedDB footprint, eviction policies | STORAGE §11.2 |
-| Mount info | App room ID, manifest hash, data room ID, schema, permissions, source block | §3.2, §6.3, §15.5 |
+| Mount info | App room ID, manifest hash, data room ID, schema, permissions, source block | §5.1, §3.2, §15.5 |
+| Transport status | Active transport per room, peer count, last sync time | §18.5 |
 | Verbose toggles | Operator notation, room IDs, event IDs on hover, capability bundle inspector | §16.10 |
 
 Bootstrap chrome is small by default — a single drawer that slides in from the side. Verbose mode expands it.
@@ -949,7 +1013,7 @@ A Notion-style dashboard composer. Apps that want user-configurable layouts impo
 | `<SectionBlock />` `<ColumnsBlock />` `<DividerBlock />` `<SpacerBlock />` | Layout |
 | `<ButtonBlock />` | Action affordance |
 
-Block layouts persist as a state event in the data room (`eo.layout.v1.dashboard`, schema TBD), so they survive across mounts and are shared with every viewer of that data room.
+Block layouts persist as a state event in the data room under the well-known schema `eo.layout.v1` (event type `eo.layout.dashboard`), so they survive across mounts and are shared with every viewer of that data room. `eo.layout.v1` is listed in `data-schemas/` alongside the other well-known schemas.
 
 #### 17.2.5 Collaboration surfaces
 
@@ -1019,13 +1083,108 @@ Bootstrap exposes the library as an ESM import the iframe can `import "@khora/ui
 
 EO-DB is the source. Phased adoption:
 
+Steps 17a–17d are prerequisites that must complete before the apps in steps 17e–17f can adopt the library. They do not slot neatly into the §10 phases because they cut across them; treat 17a–17d as standing work that runs alongside Phases 1–3.
+
 | Step | Action |
 |---|---|
 | 17a | Catalog EO-DB's `src/components/` and `src/blocks/` against §17.2's tables; confirm or revise |
 | 17b | Extract pure components (no Airtable/GCal coupling) into `packages/ui/` in this repo |
 | 17c | Define standard option keys (§17.4) in `schemas/eo.user.preferences.v1.json` |
 | 17d | Wire bootstrap chrome surfaces (§17.1) using the same components |
-| 17e | Port wire (Phase 2) and eo-wiki (Phase 3) to import from `@khora/ui` instead of rolling their own |
-| 17f | EO-DB itself migrates to consume `@khora/ui` rather than maintaining a parallel set |
+| 17e | Once Phase 2 is complete, port wire to import from `@khora/ui`; once Phase 3 is complete, port eo-wiki similarly |
+| 17f | At Phase 7, EO-DB itself migrates to consume `@khora/ui` rather than maintaining a parallel set |
 
 The end state: EO-DB, Khora-CM, eo-wiki, wire, eoReader, NaiBOR, Anchorage all share the same component vocabulary. Every app is recognizably part of the same suite; every user surface that's worth standardizing is standardized exactly once.
+
+---
+
+## 18. Peer-to-peer sync
+
+P2P sync is **available to every app, automatically, with no opt-in and no opt-out**. Bootstrap implements it; the capability API (§6.2) is identical whether events arrive via federation, an embedded homeserver, a WebRTC data channel, mDNS on the LAN, or a USB stick. Apps cannot accidentally ship a homeserver-only app, and cannot test "online" and ship "broken offline."
+
+### 18.1 Why this is bootstrap's job
+
+P2P sync is transport, not protocol. The capability API surface does not change. App authors cannot opt out by choosing not to think about it; bootstrap chooses transports on the app's behalf. That is the guarantee — every app on every device gets P2P for free.
+
+### 18.2 Why this works
+
+Three properties of the substrate make P2P tractable without touching the protocol:
+
+- Matrix events form a content-addressable DAG. Concurrent edits merge under Matrix's existing rules; no new conflict-resolution invented.
+- The append-only changelog (STORAGE §3.1, §13.3 refetchability invariant) is a partition-tolerant data structure. Two devices that diverge can merge by union.
+- Olm/Megolm E2EE does not depend on the homeserver beyond message relay. Direct exchange between verified devices is supported by the Matrix crypto stack as-is.
+
+STORAGE.md's invariants hold under any transport. Materializers run the same. Time travel works the same. Snapshots restore the same.
+
+### 18.3 Pluggable transports
+
+Bootstrap maintains a transport stack — each transport a small adapter (send event, receive event, list reachable peers). Apps never see the interface.
+
+| Transport | Phase | When useful |
+|---|---|---|
+| Federation (default) | Phase 1 | Standard Matrix, homeserver-mediated |
+| Embedded homeserver | Phase 8 | User hosts their own server in the browser; federates with peers |
+| Direct WebRTC | Phase 8 | Two devices on hostile networks, NAT-punched via a signaling room |
+| LAN mDNS | Phase 9 | Devices on the same network without internet |
+| Sneakernet | Phase 9 | Export the changelog to a file, transfer physically, import |
+| Pinecone overlay | Future | Matrix's experimental P2P routing layer |
+
+Bootstrap configures priority order. The active transport for each room is visible in the audit / settings drawer (§16.11, §17.1). Apps see one capability API regardless.
+
+### 18.4 Discovery
+
+Discovery is the question Matrix doesn't fully answer and P2P inherits.
+
+Mechanisms, composable:
+
+- **Homeserver-mediated** — default; the homeserver knows device reachability
+- **Signaling room** — a Matrix room dedicated to peer announcements; new devices post reachability info, peers fetch on join
+- **Well-known endpoints** — published in `m.room.app` / `m.room.data_schema` for closed networks
+- **Local broadcast** — mDNS or BLE on the same LAN
+- **Manual** — copy/paste a peer URL or scan a QR code
+
+Discovery for Megolm key sharing piggybacks on the same channels. Cross-signing, SAS, QR verification — the existing Matrix flows — work regardless of how the messages arrive.
+
+### 18.5 What apps may know
+
+The capability API gains one diagnostic, not a behavior switch:
+
+```typescript
+getTransport(): Promise<TransportInfo>
+getTransportFor(roomId: string): Promise<TransportInfo>
+
+type TransportInfo = {
+  kind: "federation" | "embedded" | "direct" | "lan" | "sneakernet" | "offline"
+  quality: "synced" | "lagging" | "partial" | "unreachable"
+  peers: number
+  last_sync_at: number | null
+}
+```
+
+Apps may surface this for UX — a "working offline, last sync 2h ago" badge, a peer-count chip — but **must not branch their semantics on it.** A `read` is a `read`; what the user sees is whatever the local cache currently knows. STORAGE §10.1 (resync) handles divergent histories; §10.3 (encryption) handles undecryptable events.
+
+A standard `<TransportBadge />` lives in `@khora/ui` (§17.2) so apps that want the indicator get it consistently.
+
+### 18.6 Implications for partition tolerance
+
+P2P amplifies a property STORAGE.md already provides: **the local cache is the source of truth for the session.** Federation lag, partition, or transport changes do not block reads. Writes are queued and replayed when any transport recovers.
+
+A user can:
+
+- Mount an app offline. Iframe loads from cached media (STORAGE §3.6); reads return cached data; writes append locally and sync when reachable.
+- Share a session-snapshot URL (§16.9) to a peer with no shared homeserver — the peer imports it and joins the data room directly via WebRTC if they have credentials, or via sneakernet if they don't.
+- Run an entire investigation across two devices — one with internet, one without — with periodic USB sync. Common in adversarial environments, impossible in homeserver-only architectures.
+
+These are first-class scenarios, not edge cases. The protocol's claim to "EO-native, Matrix-grounded" is hollow without them.
+
+### 18.7 Constraints
+
+- **NAT traversal.** WebRTC needs it. TURN servers — the only relay form that re-introduces a centralized component — are optional but common. Bootstrap ships a default relay list; users can override or omit.
+- **Embedded-homeserver weight.** Conduit-WASM and similar builds are several MB. Loaded lazily, opt-in via settings.
+- **Direct transports do not federate** to contacts on remote homeservers. Federation remains the high-level connector; direct paths are the low-level fallback.
+- **Sneakernet imports** validate event signatures and refuse forged events. The append-only invariant is preserved.
+- **The homeserver-SPOF bullet in §11** is partly resolved by P2P. Mirroring app rooms remains the federation-side mitigation; embedded homeservers and direct exchange are the P2P-side mitigation.
+
+### 18.8 EO frame note
+
+P2P sync changes *who* is on the substrate, not *what* the substrate is. REC ↬ remains the canonical timeline; INS △ remains an event append. The DEF frame for execution (the app room) and the DEF frame for development (the repo, §15) operate identically whether routed via a federated homeserver or a direct peer link. The center of gravity stays in the events, not in any transport.

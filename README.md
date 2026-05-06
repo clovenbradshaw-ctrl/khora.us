@@ -6,7 +6,7 @@ It is the master app users sign in to. From inside Khora they subscribe to datas
 
 The thing this repo previously called "Khora the app" is now Khora-CM — one app among several (alongside EO///DB, eoReader, eo-wiki, wire, Anchorage) that load through the bootstrap shell over a shared substrate of Matrix rooms.
 
-The full design lives in [SPEC.md](./SPEC.md). The short version:
+The full design lives in [SPEC.md](./SPEC.md); local persistence (the changelog, materialized state, checkpoints, time-travel, and the storage substrate behind the capability API) is specified in [STORAGE.md](./STORAGE.md). The short version:
 
 - **Three room kinds.** App rooms hold code + manifest. Data rooms hold content + schema. User rooms hold mounts and snapshots.
 - **A session is a triple.** `(app_room, data_room, user_room)`. Bootstrap composes them; the iframe sandbox enforces the boundary.
@@ -15,6 +15,7 @@ The full design lives in [SPEC.md](./SPEC.md). The short version:
 - **Reversibility is automatic.** Every change is a Matrix event. Snapshots at app, data, and session scopes; restore at any of them.
 - **Discovery is social.** Registries are rooms. Anyone can run one.
 - **Forking is native.** Fork an app room, fork a data room, fork a registry. Audit trail comes free.
+- **P2P is automatic.** Bootstrap chooses the transport (federation, embedded homeserver, direct WebRTC, LAN, sneakernet). Apps see one capability API and inherit P2P without any per-app work.
 
 ## Repo layout
 
@@ -42,6 +43,8 @@ The work is sequenced so each phase produces something testable end-to-end.
 | 5 | Forking, registries, instance spaces | 1 week |
 | 6 | Port Khora-CM onto the new bootstrap | 2 weeks |
 | 7 | Port EO///DB, eoReader, Anchorage | 3+ weeks |
+| 8 | Direct P2P transports (embedded homeserver, WebRTC, signaling) | 3 weeks |
+| 9 | LAN and sneakernet transports, full offline-first audit | 2 weeks |
 
 See SPEC.md §10 for the per-phase detail.
 

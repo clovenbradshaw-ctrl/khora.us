@@ -12,6 +12,26 @@
 - `mxapp://` URI scheme (referenced from §16.3) — convenience scheme bootstrap accepts in the Add-by-URI input alongside room aliases and IDs.
 - `STORAGE.md` — sibling spec for local persistence: IndexedDB layout (`events`, `state_current`, `checkpoints`, `indexes_live`, `sync`, `media`, `meta`), append-only changelog rules, schema-declared materializers, time-travel via `stateAt()`, capability-API additions for time-traveled queries and indexes, conflict/resync behavior, storage limits, EO operator alignment, and the invariants the cache must hold (determinism, recoverability, refetchability, time-travel exactness — all fuzz-testable). Treats `events` as REC ↬ made local; everything else is derivation.
 - `SPEC.md §17` — standard surfaces and shared component library. Lifts EO-DB's component inventory into two layers: bootstrap-provided surfaces (member viewer, schema viewer, snapshot history, capability audit log, storage panel — every mount gets these for free) and a `@khora/ui` library apps opt into (universal views Table/Kanban/Calendar/Graph/Record/Horizon, EO-aware controls including operator filters and snapshot diff and REC trace, schema/constraint/resolution-policy editors, Notion-style block composition, collaboration surfaces). Adds `getOption`/`setOption` for cross-app user preferences with a frozen vocabulary (density, theme, operator badges, verbose, default view, audit verbosity). Migration path lifts EO-DB itself into the library so it consumes what it inspired.
+- `SPEC.md §18` — peer-to-peer sync as a bootstrap responsibility. Every app gets P2P automatically; the capability API is transport-transparent. Pluggable transport stack (federation, embedded homeserver, WebRTC, mDNS, sneakernet, Pinecone), discovery via signaling rooms / well-known endpoints / local broadcast / manual exchange, single diagnostic method (`getTransport` / `getTransportFor`) for UX, partition-tolerance scenarios as first-class, plus Phase 8 (direct P2P) and Phase 9 (LAN + sneakernet) added to the phase plan.
+- `SPEC.md §6.2` rewritten as the canonical, complete capability API listing. All methods from §14, STORAGE §9, §17.4, and §18.5 now appear in one block (with `SnapshotMetadata` type defined inline). Notes transport-transparency and points readers to STORAGE.md and §17.4 for backing detail.
+
+### Fixed
+- §3.2 manifest example now includes the optional `source` block introduced in §15.5.
+- §5.2 snapshot-scope table no longer implies `eo.case.snapshot` is the canonical data-snapshot type; data snapshots are schema-specific (declared in `m.room.data_schema`).
+- §9 repo layout adds the missing `m.room.data_schema_migration.json`, `m.room.registry.entry.json`, `m.room.instance.json`, `eo.user.preferences.v1.json`, `khora.json`, and `tools/publish-from-ci.ts`. A note clarifies the layout shows the final state.
+- §10 Phase 0 scope expanded to lock §14.4, §15.5, §16.5, and §17.4 schemas alongside the original §3/§4/§5/§6.2 set, reflecting actual spec growth.
+- §16.3 Library card example reflects only `eo.case.v1` (the example previously implied a `v2` that doesn't exist).
+- §17 gains a status preamble distinguishing normative chrome (§17.1) from recommended convention (§17.2–§17.4).
+- §17.1 Mount-info row points at the right sections (§5.1, §3.2, §15.5) and adds a Transport-status row reflecting §18.
+- §17.2.4 promotes the dashboard schema from "TBD" to a concrete well-known data schema (`eo.layout.v1`, event type `eo.layout.dashboard`).
+- §17.7 phasing language disambiguated: 17a–17d are prerequisites; 17e ports happen after Phases 2/3 complete.
+- STORAGE §3.7 / §7 clarify that schema metadata is per-room (in `sync`), not duplicated in `meta`.
+- STORAGE §7.4 walks back the unsupported "negligible" claim about materializer cost; defers to the Phase 0 fuzz harness.
+- STORAGE §9 reconciles `snapshot` / `restore` / `listSnapshots` signatures with §6.2; adds `SnapshotMetadata` type and clarifies `scope` semantics including `"all"`.
+- STORAGE §12 makes explicit that checkpoints are local-only and do not exist as Matrix events; the operator table is local-storage actions, not protocol-level mappings (which remain in SPEC §8).
+- `schemas/README.md` adds rows for `m.room.data_schema_migration.json`, `eo.user.preferences.v1.json`, and `khora.json`; versioning section now distinguishes manifest-version, schema-id, and event-type-name strategies.
+- `data-schemas/README.md` adds `eo.layout.v1.json`.
+- `README.md` mentions STORAGE.md as a sibling spec, adds P2P to the short-version list, extends the phase table to include 8 and 9.
 - Directory scaffold from SPEC §9: `bootstrap/`, `apps/{khora-cm,eodb,eoreader,eo-wiki,wire,anchorage}/`, `schemas/`, `data-schemas/`, `tools/`, each with a placeholder README explaining its scope.
 - `tools/README.md` adds `publish-from-ci.ts` (CI-side publish) and notes the `verify.ts` source-walk role.
 - `apps/README.md` adds the per-app `.github/workflows/publish.yml` convention.

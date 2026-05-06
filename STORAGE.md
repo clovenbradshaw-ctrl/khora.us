@@ -208,7 +208,9 @@ LRU eviction unless `pinned`.
 
 ### 3.7 `meta`
 
-Miscellaneous singletons: user_id, homeserver_url, device_id, schema-version registry, app preferences, capability audit log.
+Miscellaneous singletons: user_id, homeserver_url, device_id, app preferences, capability audit log.
+
+Schema metadata is **per-room**: the active `schema_id` and `schema_event_id` for a room live in that room's `sync` row (§3.5). `meta` does not duplicate them. A materializer rebuild is triggered when a room's `sync.schema_event_id` advances past the version that produced the current `indexes_live` rows for that room.
 
 ---
 
@@ -404,7 +406,7 @@ On every event insert into `events`:
 2. For each materializer whose `source_event_type` matches the event's `type`, apply the materializer's update to `indexes_live`.
 3. Done.
 
-Cost: O(materializers matching this event type), typically 0–3. Negligible.
+Cost: O(materializers matching this event type) per insert, with each materializer's update bounded by the size of the value projection (constant for `index`, `set`, and most `reduce` kinds; logarithmic for `graph`). Apps with large materializer sets should monitor rebuild latency rather than assuming negligibility — the Phase 0 fuzz harness (see §13) is the place to bound this empirically before locking schema decisions.
 
 On schema version change: drop affected indexes, recompute by scanning `events`. Recomputation runs in a background worker; queries during recompute return "rebuilding" with a progress estimate.
 
@@ -456,14 +458,27 @@ subscribeIndex(roomId, indexId, callback): Subscription
 replay(roomId, fromEventId, toEventId, callback): void
 
 // Snapshots
-snapshot(label, scope): EventId
-restore(snapshotEventId): void
-listSnapshots(scope, roomId?): SnapshotMetadata[]
+//   scope ∈ {"app", "data", "session"}; see SPEC §5.2 for the three scopes.
+snapshot(label: string, scope: "app" | "data" | "session"): Promise<EventId>
+restore(snapshotEventId: EventId): Promise<void>
+listSnapshots(scope: "app" | "data" | "session" | "all", roomId?: RoomId): Promise<SnapshotMetadata[]>
+
+type SnapshotMetadata = {
+  event_id: EventId
+  scope: "app" | "data" | "session"
+  room_id: RoomId
+  label: string | null
+  taken_at: number       // origin_server_ts of the snapshot event
+  taken_by: UserId
+  pinned: boolean        // user-created pins are sticky in the UI
+}
 ```
+
+`listSnapshots`: when `scope === "all"`, `roomId` is ignored and snapshots from every accessible room are returned. When `scope` is one of the three concrete scopes, `roomId` is required for `"app"` and `"data"` (selects the app or data room) and ignored for `"session"` (the session room is always the user's own).
 
 Apps default to live queries. Time-traveled methods are used when the mount is pinned to a snapshot. Bootstrap routes transparently — the app calls `read(...)`, bootstrap chooses live or time-traveled based on the mount's pin state.
 
-These additions extend the base capability API in SPEC §6.2. Apps that were written against the base API continue to work; the time-travel and index methods are additive.
+These methods are part of the canonical capability API surface in SPEC §6.2. Apps written against the base read/append/subscribe set continue to work; the time-travel, index, and snapshot-listing methods are additive.
 
 ---
 
@@ -518,7 +533,9 @@ Vault rooms default to `pin = true`. RSS-feed rooms default to aggressive evicti
 
 ## 12. EO operator alignment
 
-| Operator | Storage event |
+This table maps EO operators to the **local storage actions** they trigger. The protocol-level mapping (operator → Matrix event) is in SPEC §8 and is the canonical one. The entries below describe what happens *in the cache* when those Matrix events arrive; checkpoints in particular are a local-only construct and do not exist as Matrix events.
+
+| Operator | Storage action (local cache) |
 |---|---|
 | `NUL ∅` | New room registered in `sync` with empty `events` |
 | `DES ⊡` | Schema event written to `events` and projected to `state_current`; materializers initialized in `indexes_live` |
@@ -526,7 +543,7 @@ Vault rooms default to `pin = true`. RSS-feed rooms default to aggressive evicti
 | `SEG \|` | Multiple rooms tracked independently; vault/bridge/roster pattern is just three rooms |
 | `CON ⋈` | Cross-room reads (e.g. mount joining app room + data room state) |
 | `SYN ∨` | Schema migration: union of old and new event types, materializer rebuild |
-| `DEF ⊢` | Checkpoint write, optionally pinned; also Matrix `eo.user.snapshot` event in user room |
+| `DEF ⊢` | The Matrix DEF event (e.g. `eo.user.snapshot`, schema-declared data snapshot, `m.room.app.release`) is written to `events`; bootstrap *also* writes a local checkpoint as a fast-restore optimization. Checkpoints are local-only — never sent to other devices, never federated |
 | `EVA ⊨` | Restoration: `stateAt()` produces the materialized frame the app evaluates |
 | `REC ↬` | The `events` store itself, in `local_seq` order |
 

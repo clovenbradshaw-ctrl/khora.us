@@ -8,6 +8,7 @@ Well-known data schemas — the schemas declared by data rooms via `m.room.data_
 | `eo.corpus.v1.json` | eoReader, eo-wiki | General-purpose document corpus |
 | `eo.feed.v1.json` | wire | RSS / news feed items |
 | `eo.eodb.v1.json` | EO///DB | Operator-rich workbench substrate |
+| `eo.layout.v1.json` | any app using `@khora/ui` block composition | Dashboard layouts (event type `eo.layout.dashboard`); SPEC §17.2.4 |
 
 Each schema is JSON Schema draft 2020-12 and validates the `payload` field of its event types. The EO triple (`content.eo.{operator, site, resolution}`, SPEC §4.2) is uniform across all schemas and validated by a shared schema fragment.
 
