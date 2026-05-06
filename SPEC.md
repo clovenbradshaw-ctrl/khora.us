@@ -691,3 +691,166 @@ For Ground Truth's investigative apps this matters. For wire and eo-wiki it prob
 The repo is the **DEF frame for development** — it defines what counts as a contribution, a review, a release candidate. The room is the **DEF frame for execution** — it defines what counts as a running version, an authoritative release, a mounted app. Two frames, related but distinct, each with their own substrate. The handoff between them is the publish event, and `source` in the manifest is what makes that handoff legible from either side.
 
 Treat the repo as the development surface and the room as the runtime surface, and never let those wires cross.
+
+---
+
+## 16. Bootstrap UX surface
+
+This section describes the surface the user sees inside the bootstrap. It is normative for the reference bootstrap; alternative bootstraps may diverge so long as they preserve the protocol contracts in §1–§15.
+
+### 16.1 Three top-level surfaces
+
+Three top-level surfaces, each doing one thing:
+
+- **Mounts** — home, what you actively use
+- **Library** — find: apps and data
+- **History** — revisit: snapshots and audit
+
+The four actions a user might want — find/add, fork, create from repo, subscribe — are variations on a single shape: acquire a Matrix room reference, subscribe to it, optionally produce derivatives.
+
+### 16.2 Home — launcher of mounts
+
+After login, tiles. Each tile is one `(app × data)` pair the user has configured. App icon, app name, data room name underneath in smaller text, a pin glyph if version-locked, a dot if there's unread activity in the data room. Tap → iframe opens. Bottom: "+" for new mount.
+
+The deliberate move: "installed app" isn't a tile. **Mounts are.** In this system, having an app and having data are independent acquisitions; the app does nothing alone. Surfacing only mounts on home reinforces that the unit of *use* is the pair, not either piece.
+
+### 16.3 Library — apps
+
+Reached from "+" or a Library tab. Fed by registry rooms — a small seed registry shipped in bootstrap, plus any registries the user has added. Each registry is a row in settings, on/off-able, with badges on apps showing source.
+
+Each app card:
+
+```
+khora-cm                                    [stable v1.4.0]
+Khora Case Management
+Sovereign case management for journalists and lawyers.
+↳ accepts: eo.case.v1, eo.case.v2
+↳ source: github.com/michael/khora • commit a1b2c3d
+[ Install ] [ Pin version ] [ Fork ]
+```
+
+- **Install** — subscribes to the app room; nothing executes.
+- **Pin version** — subscribes but locks to a specific manifest hash regardless of channel updates.
+- **Fork** — opens the fork modal (§16.4).
+
+Always available alongside browse: an **"Add by URI"** input. Accepts room aliases (`#khora-cm-app:michael.tld`), room IDs, or a custom `mxapp://michael.tld/khora-cm` scheme. Same install flow as browse. This is where power users live and where shared links land.
+
+### 16.4 Forking
+
+From any app card → **Fork** → modal with three fields:
+
+1. **Publish to** — defaults to a "Khora Apps" community room on the user's homeserver (created on first fork if absent). Power users override.
+2. **Repo** — optional GitHub URL of a forked source repo. If provided, gets written to the new manifest's `source` block (§3.2, §15.5). If not, fork is identity-only — the new app room is code-identical to upstream but the user controls releases.
+3. **Initial channel** — usually `stable` with upstream's current manifest hash copied as the user's first release.
+
+Result: new app room, user at PL 100, `fork_of` set (§3.5). The Library shows it tagged "fork of khora-cm." Mounts using upstream get a "switch to fork?" hint (declinable).
+
+### 16.5 Creating from repo
+
+"+" → **Create app from repo** → paste GitHub URL.
+
+Bootstrap looks for `khora.json` in the repo root:
+
+```json
+{
+  "app_id": "my-tool",
+  "display_name": "My Tool",
+  "accepts_schemas": ["eo.feed.v1"],
+  "permissions_required": ["read_data", "subscribe_data"],
+  "build": "npm run build",
+  "entry": "dist/index.html"
+}
+```
+
+If absent, bootstrap refuses and links a template repo. Avoids the "what is this random HTML?" failure mode.
+
+If present, two paths:
+
+- **Manual publish** — bootstrap shows a copyable command: `npx khora publish --room !abc:server`. The user runs it locally; it builds, uploads to media, writes the manifest. Bootstrap polls the room until the manifest appears, then drops them on the new app's detail page. Protocol-purist path.
+- **Hosted publish** — only available if a build server is configured (an n8n VM is the obvious candidate). Bootstrap fires a webhook with the repo URL and target room, the build server does the work, the manifest appears in the room, bootstrap takes the user there. UI-only path for non-developers; nothing magic.
+
+Either way, the publish step is a Matrix event in a room the user controls. **Bootstrap is not a build service. It is an orchestrator.**
+
+### 16.6 Library — data
+
+Symmetric to apps. Same browse-or-paste-URI shape. Each card:
+
+```
+🌐 Nashville RSS                                eo.feed.v1
+Public RSS aggregation, civic and political beats.
+↳ 4,213 events • last activity 2h ago
+[ Subscribe ]
+```
+
+Visibility glyph at left: 🌐 public, 👥 invited, 🔒 vault (E2EE). **Subscribe** is the Matrix join. For invited rooms it's **Request access** → knock event or DM, depending on room config. Once subscribed, the data room is mountable.
+
+Creating data: Library → Data → "+" → schema picker (or "Define new schema" advanced), visibility selector, name. New room created, schema declared as state (§4.1), user at PL 100. From the new room's detail page, **Submit to registry** lists registries the user can publish into.
+
+### 16.7 Mounting
+
+The synthesis moment. From home "+" → **New mount**:
+
+1. **Pick app** — installed apps
+2. **Pick data** — subscribed data rooms, **filtered to schema-compatible only**; incompatible rooms appear greyed with "needs `eo.case.v1`; this is `eo.feed.v2`" hover
+3. **Configure** — view mode, filters, app-declared prefs from the manifest
+4. **Save** → tile appears on home
+
+Schema compatibility is enforced here, at mount time, not at runtime. The iframe never has to handle "oh, this data isn't shaped right."
+
+### 16.8 Fast paths
+
+Long form is for power use. The common case collapses:
+
+- From a data room's detail page → **Open with…** → list of compatible installed apps → tap → mount created and opened, single gesture.
+- From an app's detail page → **Mount with…** → list of compatible subscribed data rooms → same.
+
+### 16.9 History
+
+Each mount has a clock icon → three-lane history view:
+
+```
+APP RELEASES         DATA SNAPSHOTS       MY PINS
+────────────         ──────────────       ───────
+v1.4.0  May 6  ●     2026-05-06 15:00     "Investigation review"
+v1.3.2  Apr 30                            "Pre-Lighthouse meeting"
+v1.3.1  Apr 22       2026-04-15 09:00
+                     2026-03-28 12:00
+```
+
+Tap any point in any lane → mount reloads at that frame. URL reflects: `?mount=...&app_at=$abc&data_at=$xyz`. Copying the link shares a specific reading. This is **citation as event-ID triple** made tactile.
+
+**Pin** → labeled session snapshot (`eo.user.snapshot`, §5.2), gets a star, sortable to top.
+
+### 16.10 Aesthetic and power-user surface
+
+Default is dense — operator notation visible in activity ribbons (`INS △ → DEF ⊢ stable v1.4.0` when a release lands), mount tiles can optionally show the EO triple of their most recent data event. eo-wiki / wire / NaiBOR aesthetic continuity: terminal-adjacent, monospace numerics, no rounded corners pretending to be friendly.
+
+Settings → **Verbose** toggles deeper surfaces: room IDs everywhere, event IDs on hover, the capability bundle each iframe received, the postMessage audit log scrolling live. For most users, off. For Anchorage-style provenance work and for debugging, on.
+
+### 16.11 Settings drawer
+
+Standard infrastructure surface, deliberately not hidden:
+
+- **Homeservers** — primary, plus mirrors
+- **Trusted registries** — toggleable
+- **Capability audit log** — every `read`/`append`/`subscribe` call apps have made, filterable per app
+- **Delegated publish bots** — the GitHub Actions account, the n8n bot, etc.
+- **Pinned versions**
+- **Vault keys** — Megolm, exportable, restorable
+
+The audit log is the thing that makes the iframe sandbox claim checkable. If users can see what their apps have actually done, the sandbox is doing real work; if it's hidden, no one can tell whether it is.
+
+### 16.12 The shape — one verb with arguments
+
+**Mounts = doing. Library = finding. History = revisiting.** Within Library, apps and data are mirror images — same browse, subscribe, create, fork moves on both sides. The only place they differ is at mounting, where the asymmetry shows: an app *interprets* (DEF frame), data *is interpreted* (substrate). The UX surfaces that symmetry where it exists and the asymmetry only at the moment it actually matters.
+
+The four actions all share machinery:
+
+| Action | Mechanics |
+|---|---|
+| Find/add app | Subscribe to an app room |
+| Subscribe to data | Subscribe to a data room |
+| Fork app | Subscribe + new room with `fork_of` |
+| Create from repo | Subscribe + new room + first manifest from build output |
+
+Recognizing them as one verb with arguments is what keeps the UI from sprawling into a CMS. **One add button, four arguments, one consistent shape underneath.**

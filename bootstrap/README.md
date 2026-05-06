@@ -16,6 +16,7 @@ Empty. Phase 1 of SPEC §10 fills this in:
 - `src/snapshot.ts` — DEF events at app/data/session scope (SPEC §5.2, Phase 4)
 - `src/registry.ts` — discovery UI (SPEC §7, Phase 5)
 - `src/mount.ts` — (app × data) pairing, subscription resolution (SPEC §5, §14)
+- `src/ui/` — the three top-level surfaces (Mounts / Library / History) per SPEC §16, plus the fork and create-from-repo modals (§16.4–§16.5), the schema-filtered mount picker (§16.7), and the verbose settings drawer (§16.10–§16.11)
 - `tests/` — unit + integration tests; in particular the iframe sandbox boundary
 
 ## Constraints worth re-reading before writing code
