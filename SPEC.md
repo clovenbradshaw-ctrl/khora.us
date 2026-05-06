@@ -72,12 +72,20 @@ Each release writes a versioned manifest as a numbered state event:
     "released_by": "@michael:michael.tld",
     "previous_manifest": "$prev_evt_id",
     "changelog": "Fixed cursor/witness conflation. Added DEF tagging for case files.",
-    "permissions_required": ["read_data", "append_data", "subscribe_data"]
+    "permissions_required": ["read_data", "append_data", "subscribe_data"],
+    "source": {
+      "repo": "https://github.com/michael/khora",
+      "commit": "a1b2c3d4e5f6...",
+      "tag": "v1.4.0",
+      "build_log": "https://github.com/michael/khora/actions/runs/12345"
+    }
   }
 }
 ```
 
 Bootstrap **MUST** verify `sha256` against fetched bytes before executing. The hash is the link between the manifest's claim and the code's actuality — without verification, the manifest is just gossip.
+
+The `source` block is **optional**. When present, it lets a verifier walk: manifest → repo at commit → CI build log → bytes whose hash matches. A hand-published app room with no repo is still legitimate. See §15 for the repo↔room model and the publish pipeline.
 
 This is `INS △` at site = app room, resolution = release.
 
@@ -589,3 +597,97 @@ Leaving an instance space additionally drops membership in the underlying app an
 | Snapshot | Restore-point / version history | DEF events at app, data, or session scope |
 
 The crosswalk is intentional. The Airtable/CRM mental model is what users have. The Matrix primitives are what the protocol delivers. Khora is the translation layer that makes them line up without anyone holding a token they shouldn't.
+
+---
+
+## 15. Repo and room: development vs execution
+
+GitHub plays a real role in this architecture, but a constrained one — and getting the constraint right is the whole point. The repo is **source**, the Matrix room is **release**. Conflating them recreates exactly the centralization problem this architecture exists to dissolve.
+
+### 15.1 Source of truth for development, not for execution
+
+The repo is where the app is *written* — version control, CI, code review, issue tracking, branches, the whole apparatus humans need to actually develop software. The Matrix room is where the app is *run from*. Bootstrap never reads from GitHub. It reads the manifest from the app room, fetches the bundle from `mxc://` (or external fallback), verifies the hash, executes. **If GitHub disappears tomorrow, the app keeps loading.**
+
+This matters because the political economy of the system depends on it. Anyone can mirror the repo. Anyone can fork the app room. Anyone can run their own homeserver. There is no single point at which the system can be taken down by removing one party. Putting GitHub on the execution path would undo that.
+
+### 15.2 CI as the publish step
+
+The pipeline that makes this work:
+
+```
+git tag v1.4.0
+  → GitHub Actions builds the bundle
+  → computes sha256
+  → uploads to homeserver via /upload
+  → writes m.room.app.manifest event with mxc + hash
+  → writes m.room.app.release event tagging the channel
+  → optionally mirrors bundle to R2/IPFS/Arweave for fallback_url
+```
+
+The bot account that does this has PL 100 in the app room. Its credentials live in CI secrets. Releases become reproducible from the git tag — anyone with the repo and a homeserver can verify that `v1.4.0` builds to the bytes that hash to what the manifest claims.
+
+The canonical workflow lives at `apps/<app>/.github/workflows/publish.yml` (one per app). The reusable script is `tools/publish-from-ci.ts`.
+
+### 15.3 What the repo encodes that the room cannot
+
+Some things git is genuinely better at than Matrix:
+
+- **Line-level history of source.** Matrix's `prev_content` gives you state-event-level diffs, which is the wrong granularity for code review. Git diffs are the right tool.
+- **Issues and PRs.** Pre-publication discussion. Once a release is tagged, the conversation that produced it is in the repo.
+- **Branches.** Pre-fork experimentation that may never become a published app. Cheap in git, expensive in Matrix (every branch ≈ a new room).
+- **Build reproducibility.** Lock files, Dockerfiles, the whole build environment. The manifest's `sha256` is a claim; the repo is what makes the claim checkable.
+
+### 15.4 What the room encodes that the repo cannot
+
+Some things Matrix is better at:
+
+- **Federation and offline replay.** The room works without internet to GitHub.
+- **Permissioned data adjacent to the app.** Nothing in git equates to a Megolm-encrypted vault.
+- **User mounts and sessions.** GitHub has no concept of "I ran this app against this data on this date."
+- **Forking that includes the release pipeline.** A git fork is source; an app room fork is source + release identity + user mounts pointing at it. Different beasts.
+
+### 15.5 Manifest `source` block
+
+To make the repo↔room link auditable, `m.room.app.manifest` accepts an optional `source` block (introduced in §3.2):
+
+```json
+"source": {
+  "repo": "https://github.com/michael/khora",
+  "commit": "a1b2c3d4e5f6...",
+  "tag": "v1.4.0",
+  "build_log": "https://github.com/michael/khora/actions/runs/12345"
+}
+```
+
+A verifier walks: manifest claims → repo at this commit → CI built it → hash matches. If any step fails, the manifest is suspect. None of these fields are required — a hand-published app room with no repo is still legitimate — but when they're present, the trust chain is checkable end to end.
+
+### 15.6 Forks across both layers
+
+The interesting case. Someone forks Khora-CM:
+
+1. Fork the repo on GitHub. (Standard.)
+2. Run their own publish pipeline pointed at *their* app room.
+3. Their app room has `fork_of` pointing at yours.
+4. Their manifest's `source.repo` points at their fork.
+
+A user inspecting two app rooms can see: same upstream commit, divergent commits since, divergent release histories. Both run the same way through bootstrap. Neither has authority over the other. The fork is fully realized at both layers — code and execution — without any central registry blessing it.
+
+### 15.7 The repo as registry seed
+
+A `khora-apps` meta-repo can publish a JSON file listing well-known app rooms — effectively a default registry that bootstrap can ship with as a seed. Users override or replace it freely. This is the same role npm registry plays for Node, except: nothing in the protocol depends on it, anyone can run their own, and the registry itself is just a JSON file in a public repo (or a registry room in Matrix; SPEC §7).
+
+### 15.8 Honest tension: the build environment is centralized
+
+GitHub Actions is a single vendor. If you care about the trust chain being *fully* decentralized, the publish step is the weakest link — the vendor could censor or alter a build, and the manifest would still hash-verify because the hash is computed by the build itself. Mitigations:
+
+- **Multi-CI signatures.** Publish from multiple CI providers (GHA + Forgejo Actions + local) and require N-of-M signatures on releases.
+- **Reproducible builds.** Anyone can rebuild from the commit and verify the bytes match.
+- **Document verification procedure.** For high-stakes apps (Khora-CM with vault data, Anchorage with source identities), require reproducible builds and document the verification procedure.
+
+For Ground Truth's investigative apps this matters. For wire and eo-wiki it probably doesn't. The protocol does not prescribe a single answer; it makes the tradeoff legible per app.
+
+### 15.9 The deeper read
+
+The repo is the **DEF frame for development** — it defines what counts as a contribution, a review, a release candidate. The room is the **DEF frame for execution** — it defines what counts as a running version, an authoritative release, a mounted app. Two frames, related but distinct, each with their own substrate. The handoff between them is the publish event, and `source` in the manifest is what makes that handoff legible from either side.
+
+Treat the repo as the development surface and the room as the runtime surface, and never let those wires cross.
