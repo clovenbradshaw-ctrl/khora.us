@@ -856,3 +856,176 @@ The four actions all share machinery:
 | Create from repo | Subscribe + new room + first manifest from build output |
 
 Recognizing them as one verb with arguments is what keeps the UI from sprawling into a CMS. **One add button, four arguments, one consistent shape underneath.**
+
+---
+
+## 17. Standard surfaces and shared component library
+
+EO-DB (`clovenbradshaw-ctrl/EO-DB`) is the source of truth for what these surfaces look like in practice. Its component set — universal views, block composition, EO-aware controls, schema management, collaboration — proves out the patterns that every Khora app benefits from. This section lifts those patterns into two layers: **bootstrap-provided surfaces** (free for every app) and the **`@khora/ui` library** (opt-in by import).
+
+The principle: anything that is generic over (a) the EO triple, (b) data-room schemas, or (c) Matrix room mechanics belongs in one of these layers. Anything app-specific stays in the app.
+
+### 17.1 Bootstrap-provided surfaces
+
+Available to every mount without app code. Bootstrap renders these in chrome around the iframe; apps cannot hide or alter them. They are **part of the trust boundary**: a user always knows they can reach them.
+
+| Surface | Purpose | Underlying spec |
+|---|---|---|
+| Member / power-level viewer | Who's in the data room and at what PL | §4.3 |
+| Schema viewer | The active `m.room.data_schema` for the mounted data room | §4.1 |
+| Snapshot history (3-lane) | App releases × data snapshots × user pins | §16.9 |
+| Capability audit log | Every `read` / `append` / `subscribe` the app has made, filterable | §16.11, STORAGE §3.7 |
+| Storage usage panel | Per-room IndexedDB footprint, eviction policies | STORAGE §11.2 |
+| Mount info | App room ID, manifest hash, data room ID, schema, permissions, source block | §3.2, §6.3, §15.5 |
+| Verbose toggles | Operator notation, room IDs, event IDs on hover, capability bundle inspector | §16.10 |
+
+Bootstrap chrome is small by default — a single drawer that slides in from the side. Verbose mode expands it.
+
+### 17.2 The `@khora/ui` library
+
+Published as a versioned package in this repo (path TBD: `packages/ui/`). Apps import the components they want; the library is **opt-in**, not bundled with bootstrap. Apps that want a custom UI ignore it entirely.
+
+The library is just code — bootstrap doesn't enforce its use. But apps that adopt it get visual consistency with Khora-CM, eo-wiki, wire, NaiBOR, eoReader, and EO-DB itself. Users develop muscle memory across the suite.
+
+Five families, mapping EO-DB's component inventory:
+
+#### 17.2.1 Universal views
+
+Render any data room in a recognizable mode. View components are generic over schema; they read field metadata from the schema's `event_types` to know what to show.
+
+| Component | Purpose | EO-DB origin |
+|---|---|---|
+| `<TableView />` | Spreadsheet-like rows over event payloads | `TableView`, `TableBlock` |
+| `<KanbanView />` | Column buckets keyed on a schema-declared field | `KanbanView` |
+| `<CalendarView />` | Time-axis layout over events with date fields | `CalendarView`, `CalendarBlock` |
+| `<GraphView />` | Adjacency rendering over `eo.*.link` events | `GraphView` |
+| `<RecordView />` / `<RecordDetailDrawer />` | Per-record full view, flippable to event timeline | `RecordView`, `RecordDetailDrawer`, `RecordTimeline` |
+| `<Horizon />` | Multi-layer activity ribbon: operator counts, recent events, sender breakdown | `Horizon`, `HorizonQueryBar` |
+
+Each view accepts `roomId`, `schemaId`, optional `filter` and `at` (event ID for time-traveled rendering, per STORAGE §8). Apps wire one or many.
+
+#### 17.2.2 EO-aware controls
+
+Generic across any EO data room because every event carries `content.eo.{operator, site, resolution}` (§4.2).
+
+| Component | Purpose |
+|---|---|
+| `<OperatorFilter />` | Chip strip: NUL / DES / INS / SEG / CON / SYN / DEF / EVA / REC. Toggle to include/exclude |
+| `<SiteFacet />` | Drill-down by `content.eo.site` |
+| `<ResolutionFacet />` | Drill-down by `content.eo.resolution` |
+| `<RecTrace />` | Render the chain of events that produced a given object — the REC ↬ as a timeline |
+| `<SnapshotDiff />` | Side-by-side `stateAt(A)` vs `stateAt(B)`, structural diff with operator counts |
+| `<OperatorRibbon />` | Compact summary suitable for a sidebar; same data as Horizon at lower density |
+| `<CitationLink />` | Renders a copyable URL with `?app_at=…&data_at=…` (citation as event-ID triple, §16.9) |
+
+These are the surfaces that make EO-native intuition tactile. EO-DB is built around them; every other app gets them by import.
+
+#### 17.2.3 Schema and data management
+
+| Component | Purpose | EO-DB origin |
+|---|---|---|
+| `<SchemaView />` | Read-only render of the active `m.room.data_schema` | `SchemaView` |
+| `<SchemaEditor />` | PL-gated editor for owners (writes a new schema state event) | `SchemaFieldPanel`, `ColumnManagerPanel`, `ColumnTypeSelector` |
+| `<FilterBar />` | Field-aware filter chips | `FilterBar`, `QueryFilterInput` |
+| `<SortPanel />` | Multi-key sort by schema fields | `SortPanel` |
+| `<FieldPicker />` / `<LinkFieldPicker />` | Reusable selectors driven by schema | `FieldPicker`, `LinkFieldPicker` |
+| `<ConstraintComposer />` | Express schema constraints (uniqueness, required, ranges) | `ConstraintComposer` |
+| `<ResolutionPolicyComposer />` | Declare how concurrent edits resolve under `SYN ∨` | `ResolutionPolicyComposer` |
+| `<ImportView />` | CSV / JSONL import wizard, schema-mapped | `ImportView` |
+| `<RecycleBin />` | DES'd events, restorable | `RecycleBin` |
+
+The constraint and resolution-policy composers are EO-specific — they're how operator semantics get expressed at the schema level for use by materializers (STORAGE §7).
+
+#### 17.2.4 Composition blocks
+
+A Notion-style dashboard composer. Apps that want user-configurable layouts import these.
+
+| Component | EO-DB origin |
+|---|---|
+| `<BlockRegistry />`, `<BlockRenderer />`, `<BlockWrapper />` | Infrastructure |
+| `<BlockConfigPanel />` | Per-block configuration drawer |
+| `<TableBlock />` `<ListBlock />` `<MetricBlock />` `<RecordBlock />` `<CalendarBlock />` | Data-bound blocks |
+| `<HeadingBlock />` `<ParagraphBlock />` | Text |
+| `<SectionBlock />` `<ColumnsBlock />` `<DividerBlock />` `<SpacerBlock />` | Layout |
+| `<ButtonBlock />` | Action affordance |
+
+Block layouts persist as a state event in the data room (`eo.layout.v1.dashboard`, schema TBD), so they survive across mounts and are shared with every viewer of that data room.
+
+#### 17.2.5 Collaboration surfaces
+
+| Component | Purpose | EO-DB origin |
+|---|---|---|
+| `<SpaceMembers />` | Roster of an instance space (§14.4) | `SpaceMembers` |
+| `<SpaceInvite />` | Generate / accept invites | `SpaceInvite` |
+| `<OnlineUsers />` | Live presence | `OnlineUsers`, `PeopleView` |
+| `<MessagesView />` / `<WhisperChat />` | In-data-room chat for collaboration | `MessagesView`, `WhisperChat` |
+| `<ElementHistory />` | Per-element edit history | `ElementHistory` |
+
+The chat surfaces use Matrix message events in the data room. They are not a separate sub-room — discussion lives next to the data it's about.
+
+### 17.3 Branching surfaces
+
+Branching of data rooms (separate from app-room forking, §3.5) is part of EO-DB's model: `BranchBar`, `BranchExplorer`, `BranchExplorerPanel`. Lifting this requires a protocol decision the spec defers: data branches as separate rooms with `branch_of` linkage, or as a single room with branch tags.
+
+For now: `<BranchBar />` and `<BranchExplorer />` ship in the library against a placeholder protocol. The protocol settles in a follow-up to STORAGE.md once eo-wiki forces the question.
+
+### 17.4 Standard options (user preferences applied across apps)
+
+Beyond components, there is a parallel layer: **per-user, cross-app preferences** that bootstrap stores in the user room (§5) and surfaces to every mount via the capability API.
+
+```typescript
+getOption<T>(key: string): T          // per-user, persists in user room
+setOption<T>(key: string, value: T)
+subscribeOption<T>(key: string, cb): Subscription
+```
+
+A small, frozen vocabulary of standard option keys, recognized across all `@khora/ui` components:
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `ui.density` | `"compact" \| "comfortable"` | `"compact"` | Spacing, font sizes |
+| `ui.theme` | `"terminal" \| "paper" \| "system"` | `"terminal"` | Color palette, monospace defaults |
+| `ui.operator_badges` | `boolean` | `true` | Show operator glyphs on event listings |
+| `ui.verbose` | `boolean` | `false` | Room IDs, event IDs, capability inspector |
+| `ui.default_view` | `"table" \| "kanban" \| "calendar" \| "graph" \| "record" \| "horizon"` | `"table"` | Initial view when no app-declared default |
+| `ui.timezone` | IANA string | system | Used by all date renderings |
+| `ui.locale` | BCP-47 string | system | Used by all formatting |
+| `audit.verbosity` | `"off" \| "errors" \| "all"` | `"errors"` | What gets recorded in the capability audit log (§16.11) |
+| `snapshot.auto_label` | `boolean` | `true` | Bootstrap suggests labels for user-pinned snapshots |
+| `data.confirm_destructive` | `boolean` | `true` | Confirm prompts for DES-flavored actions |
+
+Apps written against `@khora/ui` honor these without per-app code. Custom apps can ignore them, but then they break the cross-app consistency users come to expect — a deliberate cost.
+
+### 17.5 What is *not* standardized
+
+- **Vendor integrations.** Airtable sync, Google Calendar import, OAuth for third-party services, n8n webhooks. These belong in the apps that use them. Lifting them would force every app to drag in dependencies it doesn't need.
+- **App-specific business logic.** Case-management vault patterns (Khora-CM), RSS fetch loops (wire), source-identity verification (Anchorage). Each app's reason for existing is the thing that doesn't generalize.
+- **GPU acceleration** (`src/gpu/` in EO-DB). App concern; bootstrap stays CPU-side and substrate-thin.
+- **Natural-language interfaces** (`src/nl/` in EO-DB). App concern. The library may grow an `<NlQueryBar />` later if multiple apps want one, but it isn't standard.
+
+### 17.6 Versioning
+
+The `@khora/ui` library is independently versioned. Apps pin a major version in their `khora.json` (§16.5):
+
+```json
+{
+  "ui_library": "@khora/ui@^2.0.0"
+}
+```
+
+Bootstrap exposes the library as an ESM import the iframe can `import "@khora/ui"` against, served from a known mxc URI alongside the app's bundle. Standard option keys (§17.4) are part of the contract: removing or changing a key is a breaking change requiring a major bump.
+
+### 17.7 Migration path
+
+EO-DB is the source. Phased adoption:
+
+| Step | Action |
+|---|---|
+| 17a | Catalog EO-DB's `src/components/` and `src/blocks/` against §17.2's tables; confirm or revise |
+| 17b | Extract pure components (no Airtable/GCal coupling) into `packages/ui/` in this repo |
+| 17c | Define standard option keys (§17.4) in `schemas/eo.user.preferences.v1.json` |
+| 17d | Wire bootstrap chrome surfaces (§17.1) using the same components |
+| 17e | Port wire (Phase 2) and eo-wiki (Phase 3) to import from `@khora/ui` instead of rolling their own |
+| 17f | EO-DB itself migrates to consume `@khora/ui` rather than maintaining a parallel set |
+
+The end state: EO-DB, Khora-CM, eo-wiki, wire, eoReader, NaiBOR, Anchorage all share the same component vocabulary. Every app is recognizably part of the same suite; every user surface that's worth standardizing is standardized exactly once.
