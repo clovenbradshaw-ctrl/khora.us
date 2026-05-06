@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import Icon from './components/common/Icon.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
+import Launcher from './components/Launcher.jsx';
 import CaseList from './components/CaseList.jsx';
 import IndividualProfile from './components/IndividualProfile.jsx';
 import InboxView from './components/InboxView.jsx';
@@ -26,6 +27,10 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [restoring, setRestoring] = useState(true);
   const [authError, setAuthError] = useState('');
+
+  // ── Bootstrap: which app is mounted (SPEC §16.2) ─────────────
+  // null = launcher (home of mounts). 'khora-cm' = legacy single-app shell.
+  const [selectedApp, setSelectedApp] = useState(null);
 
   // ── Context ──────────────────────────────────────────────────────
   const [contexts, setContexts] = useState([]); // ['client', 'provider']
@@ -179,6 +184,14 @@ export default function App() {
     setContexts([]);
     setView('cases');
     setSelectedCase(null);
+    setSelectedApp(null);
+  };
+
+  // ── Back to launcher ─────────────────────────────────────────
+  const handleBackToLauncher = () => {
+    setSelectedApp(null);
+    setView('cases');
+    setSelectedCase(null);
   };
 
   // ── Context switch ───────────────────────────────────────────
@@ -201,6 +214,44 @@ export default function App() {
   // ── Login ──────────────────────────────────────────────────────
   if (!user) {
     return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  // ── Bootstrap launcher (SPEC §16.2) ────────────────────────────
+  // After login the user lands on the launcher, not directly inside an app.
+  if (!selectedApp) {
+    return (
+      <Launcher
+        user={user}
+        onSelectApp={setSelectedApp}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // Stub apps — anything other than khora-cm is not yet mounted in-process.
+  if (selectedApp !== 'khora-cm') {
+    return (
+      <div className="launcher-screen">
+        <header className="launcher-header">
+          <button className="btn-ghost btn-sm" onClick={handleBackToLauncher}>
+            <Icon name="chevron-left" size={14} /> Mounts
+          </button>
+          <div className="launcher-header-spacer" />
+          <ThemeToggle compact />
+        </header>
+        <main className="launcher-main">
+          <div className="empty-state" style={{ minHeight: 400 }}>
+            <Icon name="folder" size={40} color="var(--tx-3)" className="empty-state-icon" />
+            <div className="empty-state-title">{selectedApp} — not yet implemented</div>
+            <div className="empty-state-desc">
+              This app is scaffolded in <code>apps/{selectedApp}/</code> but won't load
+              until the bootstrap shell ships (SPEC §10, Phase 1+). For now, only
+              Khora CM runs in-process.
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   // ── Navigation items ───────────────────────────────────────────
@@ -368,7 +419,15 @@ export default function App() {
       <aside className={`app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         {/* Brand */}
         <div className="sidebar-header">
-          <span className="sidebar-brand">Khora</span>
+          <button
+            className="btn-icon"
+            onClick={handleBackToLauncher}
+            title="Back to mounts"
+            style={{ marginRight: 4 }}
+          >
+            <Icon name="chevron-left" size={14} color="var(--tx-3)" />
+          </button>
+          <span className="sidebar-brand">Khora CM</span>
           <button
             className="sidebar-collapse-btn"
             onClick={() => setSidebarCollapsed(true)}
