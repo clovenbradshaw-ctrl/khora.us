@@ -316,6 +316,8 @@ restore(snapshotEventId: string): Promise<void>
 
 Bootstrap rejects calls outside the app's mount scope. App cannot read tokens, cannot reach unmounted rooms, cannot widen permissions. App can be killed by closing the iframe.
 
+The local storage substrate that backs `read`, `subscribe`, and the time-travel variants is specified separately in [STORAGE.md](./STORAGE.md). That document also defines additional methods (`readAt`, `queryIndex`, `queryIndexAt`, `subscribeIndex`, `replay`) that bootstrap exposes once the changelog/checkpoints layer is in place.
+
 ### 6.3 Capability scoping
 
 Each iframe receives a capability bundle on init:

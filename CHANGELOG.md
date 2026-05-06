@@ -10,6 +10,7 @@
 - `SPEC.md §3.2` — optional `source` block on `m.room.app.manifest` (`repo`, `commit`, `tag`, `build_log`). Makes the repo↔room trust chain auditable end to end without making it required.
 - `khora.json` repo config (referenced from §16.5) — minimal manifest declarations bootstrap reads from a source repo to drive create-from-repo. Schema lands in `schemas/` during Phase 0.
 - `mxapp://` URI scheme (referenced from §16.3) — convenience scheme bootstrap accepts in the Add-by-URI input alongside room aliases and IDs.
+- `STORAGE.md` — sibling spec for local persistence: IndexedDB layout (`events`, `state_current`, `checkpoints`, `indexes_live`, `sync`, `media`, `meta`), append-only changelog rules, schema-declared materializers, time-travel via `stateAt()`, capability-API additions for time-traveled queries and indexes, conflict/resync behavior, storage limits, EO operator alignment, and the invariants the cache must hold (determinism, recoverability, refetchability, time-travel exactness — all fuzz-testable). Treats `events` as REC ↬ made local; everything else is derivation.
 - Directory scaffold from SPEC §9: `bootstrap/`, `apps/{khora-cm,eodb,eoreader,eo-wiki,wire,anchorage}/`, `schemas/`, `data-schemas/`, `tools/`, each with a placeholder README explaining its scope.
 - `tools/README.md` adds `publish-from-ci.ts` (CI-side publish) and notes the `verify.ts` source-walk role.
 - `apps/README.md` adds the per-app `.github/workflows/publish.yml` convention.
