@@ -17,9 +17,15 @@ The Phase 0 deliverable is a complete, validated set of schemas for:
 | `eo.user.mount.json` | §5.1, §14.2 |
 | `eo.user.snapshot.json` | §5.2 |
 | `eo.user.preferences.v1.json` | §17.4 |
+| `m.room.hydration.json` | §21.5 (room-shared hydration: state event referencing a `khora.hydration.v1` bundle) |
+| `eo.user.hydration_index.json` | §21.6 (optional audit breadcrumb for an external hydration file; metadata only, never key material) |
 | `khora.json` | §16.5 (repo-side config, not a Matrix event) |
 
 Schemas are JSON Schema draft 2020-12. Every schema fixture has a matching example event under `tests/` (Phase 0) that round-trips through validation.
+
+## `externalizable_fields[]` — schema amendment for data schemas
+
+SPEC §21.2 adds an optional `externalizable_fields[]` array on each entry of a data schema's `event_types[]`. Each entry has `{ field: <dot-path>, threshold_bytes: <int>, compression: "gzip" | null }`. The amendment lives in `m.room.data_schema.json` and is recognized by data schemas under `data-schemas/`; the externalized field at rest is *either* the inline value *or* a reference structure of the same shape as the manifest media reference (SPEC §3.3 + §21.2). Schemas adopting it inherit transparent externalization on every `append` through any entry path. See SPEC §21 and `data-schemas/README.md`.
 
 ## Versioning
 

@@ -124,6 +124,8 @@ If `size_bytes` exceeds the homeserver media cap (typically 50–100MB) or a pub
 
 Bootstrap concatenates parts in order, verifies the combined hash, then evaluates.
 
+The same `mxc` + `sha256` + `parts` shape generalizes from app code to data events of any kind — large note bodies, attachments, dashboard layouts, hydration bundles. See §21 for the data-event generalization.
+
 ### 3.4 Releases as DEF snapshots
 
 A `m.room.app.release` event is `DEF ⊢` at site = manifest:
@@ -218,7 +220,9 @@ Every data event embeds the EO triple in `content.eo`:
 
 Schema validates `payload`; the EO triple is uniform across all schemas. This means generic tools (timeline visualizers, snapshot diffs, EO operator counters) work over any data room, regardless of payload schema.
 
-The full set of guarantees a successful write satisfies — schema validation, EO-triple injection, permission check, local-first changelog, idempotency, audit, P2P propagation — is in §20 (the write contract). Apps do not implement these; bootstrap enforces them on every `append`.
+Payloads above the per-event size budget rely on schema-declared `externalizable_fields[]` to reference media by `mxc://` + `sha256` rather than inlining bytes. See §21 for the externalization rules and the hydration paths that let new devices, offline peers, and air-gapped recipients bootstrap a room from a single bundle.
+
+The full set of guarantees a successful write satisfies — schema validation, EO-triple injection, permission check, local-first changelog, externalization of over-threshold fields, idempotency, audit, P2P propagation — is in §20 (the write contract). Apps do not implement these; bootstrap enforces them on every `append`.
 
 ### 4.3 Permissions live on the data room
 
@@ -353,6 +357,12 @@ snapshot(label, scope): Promise<EventId>
 restore(snapshotEventId): Promise<void>
 listSnapshots(scope, roomId?): Promise<SnapshotMetadata[]>
 
+// --- Hydration (§21.4–§21.7) ---
+//   exportHydration produces an encrypted bundle for off-Matrix transport;
+//   importHydration replays one back through the §20 write contract.
+exportHydration(scope, options): Promise<{ bytes: Uint8Array, sha256: string, key_fingerprint: string }>
+importHydration(bytes: Uint8Array, key: KeyMaterial): Promise<{ rooms_imported: RoomId[], events_replayed: number, conflicts: ConflictRecord[] }>
+
 // --- Standard cross-app options (§17.4) ---
 //   key drawn from the frozen vocabulary in §17.4; persisted in user room.
 getOption<T>(key): Promise<T>
@@ -379,7 +389,7 @@ Bootstrap rejects calls outside the app's mount scope. The app cannot read token
 
 **Transport-transparent.** The same call returns the same shape whether the data arrives via federation, an embedded homeserver, a direct WebRTC channel, the LAN, or a sneakernet import. P2P is bootstrap's responsibility (§18); apps are not aware of the transport stack.
 
-**Write-correct.** Every `append` satisfies the ten guarantees in §20 — schema validation, EO-triple handling, permission check, local-first changelog write, server confirmation with idempotency, encryption when applicable, read-your-writes, P2P propagation, and audit-log capture. The contract spans every entry path (hand-coded apps, Tier 0 dashboards, Tier 1 scaffolds, `<ImportView>`, CLI tools — see §19).
+**Write-correct.** Every `append` satisfies the eleven guarantees in §20 — schema validation, EO-triple handling, permission check, local-first changelog write, externalization of over-threshold fields (§21), server confirmation with idempotency, encryption when applicable, read-your-writes, P2P propagation, and audit-log capture. The contract spans every entry path (hand-coded apps, Tier 0 dashboards, Tier 1 scaffolds, `<ImportView>`, CLI tools, and `importHydration` from external bundles — see §19, §21.7).
 
 The local storage substrate that backs `read`, `subscribe`, and the time-travel variants is specified in [STORAGE.md](./STORAGE.md). The cross-app option vocabulary is fixed in §17.4. The transport diagnostic semantics are in §18.5.
 
@@ -558,7 +568,7 @@ mDNS LAN discovery, sneakernet export/import, full offline-first audit pass. Clo
 ## 11. Constraints, gaps, known unknowns
 
 - **Matrix tokens are unscoped.** Bootstrap's iframe sandbox is doing real load-bearing work. A bug there is a credential leak. Audit this surface harder than anything else. Consider a read-only proxy in front for high-stakes deployments.
-- **State event 64KB cap** means manifests can't inline anything substantial. All app code goes through media. Verified.
+- **State event 64KB cap** means manifests can't inline anything substantial. All app code goes through media (§3.3). The same cap applies to data events; §21 generalizes the externalization pattern (`mxc://` + `sha256` + per-blob encryption) to any schema-declared field over a threshold and adds hydration bundles so new devices and offline peers bootstrap fast.
 - **Authenticated media (MSC3916)** changed the game in late 2024. Bootstrap must use `/_matrix/client/v1/media/download/...` with `Authorization` header, not the deprecated unauthenticated endpoints. mxc:// resolution is a privileged operation that only bootstrap performs; apps receive `Blob` URLs.
 - **Federation lag.** A manifest event in a remote room may not have propagated when bootstrap tries to read it. Retry with backoff; surface the wait.
 - **Schema versioning** is the place this design will hurt first. Treat breaking changes as new rooms. Do not try to be clever about in-place schema migration in v1.
@@ -965,7 +975,7 @@ Available to every mount without app code. Bootstrap renders these in chrome aro
 | Member / power-level viewer | Who's in the data room and at what PL | §4.3 |
 | Schema viewer | The active `m.room.data_schema` for the mounted data room | §4.1 |
 | Snapshot history (3-lane) | App releases × data snapshots × user pins | §16.9 |
-| Capability audit log | Every `read` / `append` / `subscribe` the app has made, filterable. Same surface as the audit log entry in the settings drawer (§16.11); rendered once, reachable from both the mount chrome and settings | §16.11, STORAGE §3.7 |
+| Capability audit log | Every `read` / `append` / `subscribe` the app has made, filterable. Same surface as the audit log entry in the settings drawer (§16.11); rendered once, reachable from both the mount chrome and settings | §16.11, STORAGE §3.9 |
 | Storage usage panel | Per-room IndexedDB footprint, eviction policies | STORAGE §11.2 |
 | Mount info | App room ID, manifest hash, data room ID, schema, permissions, source block | §5.1, §3.2, §15.5 |
 | Transport status | Active transport per room, peer count, last sync time | §18.5 |
@@ -1041,7 +1051,7 @@ A Notion-style dashboard composer. Apps that want user-configurable layouts impo
 | `<SectionBlock />` `<ColumnsBlock />` `<DividerBlock />` `<SpacerBlock />` | Layout |
 | `<ButtonBlock />` | Action affordance |
 
-Block layouts persist as a state event in the data room under the well-known schema `eo.layout.v1` (event type `eo.layout.dashboard`), so they survive across mounts and are shared with every viewer of that data room. `eo.layout.v1` is listed in `data-schemas/` alongside the other well-known schemas.
+Block layouts persist as a state event in the data room under the well-known schema `eo.layout.v1` (event type `eo.layout.dashboard`), so they survive across mounts and are shared with every viewer of that data room. `eo.layout.v1` is listed in `data-schemas/` alongside the other well-known schemas. Large layouts (long block trees, embedded preview thumbnails) externalize via `eo.layout.v1`'s `externalizable_fields[]` declaration per §21.2.
 
 #### 17.2.5 Collaboration surfaces
 
@@ -1210,7 +1220,7 @@ These are first-class scenarios, not edge cases. The protocol's claim to "EO-nat
 - **NAT traversal.** WebRTC needs it. TURN servers — the only relay form that re-introduces a centralized component — are optional but common. Bootstrap ships a default relay list; users can override or omit.
 - **Embedded-homeserver weight.** Conduit-WASM and similar builds are several MB. Loaded lazily, opt-in via settings.
 - **Direct transports do not federate** to contacts on remote homeservers. Federation remains the high-level connector; direct paths are the low-level fallback.
-- **Sneakernet imports** validate event signatures and refuse forged events. The append-only invariant is preserved.
+- **Sneakernet imports** validate event signatures and refuse forged events. The append-only invariant is preserved. The canonical sneakernet artifact is the external encrypted hydration file (§21.6), consumed by `<ImportView>` and `khora-hyd import` through the same write-contract validator chain.
 - **The homeserver-SPOF bullet in §11** is partly resolved by P2P. Mirroring app rooms remains the federation-side mitigation; embedded homeservers and direct exchange are the P2P-side mitigation.
 
 ### 18.8 EO frame note
@@ -1334,21 +1344,23 @@ For every `append(roomId, eventType, content)`, bootstrap MUST, in order:
 
 4. **Local changelog first.** Append to `events` (STORAGE §3.1, §4.1) at the next `local_seq` with a tentative event ID; update `state_current` (if state) and `indexes_live` per the declared materializers (STORAGE §7); resolve the `append` promise immediately. The local cache is the source of truth for the session.
 
-5. **Send to Matrix.** PUT the event with a transaction ID derived from the local event ID. On 2xx, replace the tentative event ID with the server-assigned one and rewrite the changelog row in place. On 4xx, mark the local event as `failed` and surface a write-error to the calling app. On network error, retry with exponential backoff (capped, every attempt visible in the capability audit log §17.1).
+5. **Externalize over-threshold fields.** For each schema-declared `externalizable_field` (§21.2), if the inline serialized size exceeds `threshold_bytes`: optionally compress, compute `sha256` over the bytes that will be uploaded, encrypt per-blob with AES-256-GCM if the room is E2EE (§21.3), upload via authenticated media, and replace the inline value with a reference structure of the same shape as §3.3. Atomic-rollback: if any blob upload fails, the entire `append` is rolled back — the local changelog row is marked `failed`, no event is sent to the homeserver, the upload is queued for retry (`outbound_queue`, STORAGE §3.8), and the calling app sees `MediaUploadFailed` (§20.3). Schemas without `externalizable_fields[]` skip this step; events whose inline payload still exceeds the homeserver event cap after this step fail with `PayloadTooLarge` (§20.3) so schemas missing a needed externalization are surfaced loudly.
 
-6. **Encrypt if the room is encrypted.** Plaintext stays in the local `decrypted` store (STORAGE §10.3); only ciphertext flows to peers. Megolm key rotation follows Matrix rules; bootstrap never lets plaintext escape the iframe-host boundary.
+6. **Send to Matrix.** PUT the event with a transaction ID derived from the local event ID. On 2xx, replace the tentative event ID with the server-assigned one and rewrite the changelog row in place. On 4xx, mark the local event as `failed` and surface a write-error to the calling app. On network error, retry with exponential backoff (capped, every attempt visible in the capability audit log §17.1).
 
-7. **Read-your-writes.** Any `read` / `readState` / `queryIndex` issued by the same iframe AFTER the `append` promise resolves MUST observe the new event, regardless of whether `/sync` has echoed it back.
+7. **Encrypt if the room is encrypted.** Plaintext stays in the local `decrypted` store (STORAGE §10.3); only ciphertext flows to peers. Megolm key rotation follows Matrix rules; bootstrap never lets plaintext escape the iframe-host boundary. Externalized blobs are encrypted in step 5 with a per-blob key wrapped into the event payload (§21.3); this step encrypts the event envelope itself.
 
-8. **Idempotency.** Replays of the same transaction ID are no-ops (Matrix-native). Apps that retry their own writes do not double-append.
+8. **Read-your-writes.** Any `read` / `readState` / `queryIndex` issued by the same iframe AFTER the `append` promise resolves MUST observe the new event, regardless of whether `/sync` has echoed it back.
 
-9. **Propagation.** Once the homeserver accepts the event, federation and any active P2P transports (§18) fan it out. Other peers' caches receive and apply per the same materializer rules. STORAGE invariants §13.1 (determinism) and §13.3 (refetchability) hold.
+9. **Idempotency.** Replays of the same transaction ID are no-ops (Matrix-native). Apps that retry their own writes do not double-append.
 
-10. **Audit.** Every successful write is recorded in the capability audit log (§17.1) with `(room_id, event_id, timestamp, app_room_id, app_manifest_event_id, transaction_id)`. Any data event in any room can be traced to the exact app version that produced it.
+10. **Propagation.** Once the homeserver accepts the event, federation and any active P2P transports (§18) fan it out. Other peers' caches receive and apply per the same materializer rules. STORAGE invariants §13.1 (determinism) and §13.3 (refetchability) hold.
+
+11. **Audit.** Every successful write is recorded in the capability audit log (§17.1) with `(room_id, event_id, timestamp, app_room_id, app_manifest_event_id, transaction_id)`. Any data event in any room can be traced to the exact app version that produced it.
 
 ### 20.2 The contract spans every entry path
 
-The same ten guarantees apply whether the write came from:
+The same eleven guarantees apply whether the write came from:
 
 | Path | How it reaches `append` |
 |---|---|
@@ -1358,6 +1370,7 @@ The same ten guarantees apply whether the write came from:
 | `@khora/ui` `<RecordDetailDrawer>` / `<TableView>` edits | Component-level `append` |
 | `<ImportView>` (CSV / JSONL) | Bulk loop of `append` per row |
 | `tools/publish.ts` writing manifests / releases | `append` over the same API |
+| `importHydration` (external `.khr` file) | Bundle replay through the same validator chain (§21.7) |
 | P2P-received write merged in | Inbound transport ingests through the same validator chain |
 
 There is no privileged write path. Bootstrap's own writes (mount events, snapshot events, layout publishing) go through the same contract as app writes.
@@ -1374,6 +1387,8 @@ Apps must be ready for `append` to fail. The contract enumerates the fail modes:
 | `OperatorMismatch` | `content.eo.operator` conflicts with the schema declaration |
 | `InsufficientPL` | User's PL is below the schema's `min_pl` for the type |
 | `PermissionDenied` | Mount permissions don't include `append` |
+| `PayloadTooLarge` | Serialized event still exceeds the homeserver event cap after externalization (or no `externalizable_fields[]` declared on a field that needs them); §21.2 |
+| `MediaUploadFailed` | Externalized blob upload failed; event not sent; retry queued in `outbound_queue` (STORAGE §3.8); §21.13 |
 | `NetworkUnavailable` (recoverable) | Queued and retried; visible in audit log |
 | `Forbidden` (terminal) | Server refused; surfaced to app |
 | `Conflict` (rare) | DAG conflict during P2P merge; STORAGE §10.1 path |
@@ -1389,3 +1404,203 @@ The contract is testable as a property suite. The Phase 0 fuzz harness (STORAGE 
 - Replay any room's changelog through `tools/verify.ts`; assert that materialized state matches what the live cache holds.
 
 A write that violates any §20.1 guarantee is a bootstrap bug, not an app bug. The contract is bootstrap's promise — apps trust it the way they trust the iframe sandbox. Every write through every room is saved correctly, or the bootstrap itself is broken and we hear about it.
+
+---
+
+## 21. Event size, externalization, and hydration
+
+Matrix events are capped near 64KB. App-code bundles already handle this via §3.3 (`mxc://` + `sha256` + `parts`). This section generalizes the same pattern to **data events of any kind** — large note bodies, image and PDF attachments, snapshot payloads with substantial state, wiki pages, dashboard layouts — and adds **hydration**: pre-built bundles that let a new device, an offline peer, or an air-gapped recipient bootstrap a room in seconds rather than walking `/sync` from genesis.
+
+Hydration travels on **two complementary paths**: a room-shared path that federates naturally, and an external-file path that works without any homeserver at all. Together they cover disaster recovery (homeserver lost), air-gap device provisioning (USB drop), long-term cold storage (years in a vault), and cross-org handoff (key delivered out-of-band).
+
+Nothing in §21 changes the capability API surface from an app's perspective. Apps still call `read`, `append`, `resolveMedia`. Bootstrap absorbs the size and bootstrap-time problems beneath them.
+
+### 21.1 The 64KB cliff
+
+Hand-coded apps ran into this first via app bundles (§3.3). Once Phase 3 ships writes for arbitrary data, the same cliff returns inside data rooms: `eo.case.evidence` events carrying a scanned PDF, `eo.note` events with multi-megabyte bodies, `eo.layout.dashboard` events as the block composer grows, `eo.import.batch` parents pointing at thousands of children. The pattern that worked for code — reference media by `mxc://` + `sha256`, fall back to HTTPS, split into `parts` if the upload itself exceeds the homeserver media cap — is the right answer for data too. §21 lifts it into the schema layer so apps don't reinvent it per event type.
+
+### 21.2 Externalizable fields
+
+Data schemas (§4.1) gain an additive field on each event-type declaration:
+
+```json
+{
+  "type": "eo.case.evidence",
+  "operator": "INS",
+  "min_pl": 50,
+  "externalizable_fields": [
+    { "field": "payload.attachment", "threshold_bytes": 16384, "compression": null },
+    { "field": "payload.body", "threshold_bytes": 32768, "compression": "gzip" }
+  ]
+}
+```
+
+If the inline serialized size of a declared field exceeds its `threshold_bytes`, bootstrap externalizes it before sending to Matrix: optionally compress, hash, encrypt (§21.3 if E2EE), upload via authenticated media, and replace the field's value with a **reference structure** of the same shape as §3.3:
+
+```json
+{
+  "primary_uri": "mxc://server/AbC...",
+  "sha256": "9f86d081...",
+  "size_bytes": 234567,
+  "content_type": "application/pdf",
+  "compression": "gzip" | null,
+  "fallback_url": "https://cdn.michael.tld/...",
+  "key": { "alg": "A256GCM", "wrapped": "..." }   // E2EE only; see §21.3
+}
+```
+
+The same field is *either* the inline value *or* the reference — never both, never a parallel `_ref` companion. Apps reading the event call `resolveMedia()` (§6.2) on the reference; the live `read` API hides the distinction. Schema validators recognize the reference shape and accept it interchangeably with the inline schema fragment.
+
+`externalizable_fields[]` is purely additive. Schemas that omit it behave exactly as today: bootstrap rejects oversized writes with `PayloadTooLarge` (added in §21.13). Schemas that adopt it inherit transparent externalization for every write through every entry path (§20.2).
+
+### 21.3 Encryption of externalized blobs
+
+In E2EE rooms, plaintext bytes never leave the device. For each externalized field, bootstrap:
+
+1. Generates a per-blob AES-256-GCM key + 12-byte nonce.
+2. Encrypts the blob; computes `sha256` over the **ciphertext** (the field that gets uploaded).
+3. Wraps the AES key into the Megolm-encrypted event payload as `reference.key.wrapped`.
+4. Uploads ciphertext via authenticated media.
+
+Recipients decrypt the event (Megolm) → unwrap the AES key → fetch the blob via `resolveMedia()` → decrypt with the unwrapped key. The homeserver and any peer without the Megolm session see only ciphertext at rest, plus an opaque media blob that nothing without the key can read. Rotation of Megolm sessions does not invalidate already-uploaded blobs; the wrapped key sits inside the event.
+
+### 21.4 Hydration — shared bundle format
+
+Both hydration paths share one bundle format identifier: `khora.hydration.v1`. A hydration bundle contains, per included room:
+
+- A compact **changelog** segment (events in `local_seq` order, schema-validated by the producer).
+- A **state snapshot** at `as_of_event` — equivalent to STORAGE §6.2's checkpoint format.
+- Optional **materialized indexes** (rebuildable, but precomputing saves time on import).
+- A **schema manifest** listing `schema_id` + `schema_version` per room, so importers can refuse incompatible bundles.
+- Optional **Megolm session keys** (gated; §21.6).
+- Room metadata: `room_id`, `last_synced_event_id`, producing device, creation timestamp.
+
+The bundle has its own `sha256` and may be Ed25519-signed by the producing device. The internal binary layout — section ordering, length encoding, compression frame format, signature placement — is a Phase 4 companion document; §21 specifies the envelope and semantics, not the byte layout.
+
+### 21.5 Room-shared hydration (`m.room.hydration`)
+
+A new state event type in the data room:
+
+```json
+{
+  "type": "m.room.hydration",
+  "state_key": "v1.0.0",
+  "content": {
+    "format": "khora.hydration.v1",
+    "primary_uri": "mxc://server/HyD...",
+    "sha256": "9f86d081...",
+    "size_bytes": 12345678,
+    "as_of_event": "$evt_at_snapshot",
+    "produced_at": "2026-05-06T12:00:00Z",
+    "produced_by": "@michael:michael.tld",
+    "schema_versions": { "eo.case.v1": "1.0.0" },
+    "signature": { "alg": "ed25519", "device_id": "ABC", "value": "..." },
+    "expires_at": null
+  }
+}
+```
+
+Encryption follows the room's E2EE configuration: in encrypted rooms the bundle ciphertext is wrapped exactly as in §21.3. New devices joining the room: fetch the latest `m.room.hydration` state → verify `sha256` and signature → decrypt → import to IndexedDB → `/sync` incrementally from `as_of_event`. Federates naturally; works whenever the homeserver is reachable. Multiple `m.room.hydration` events with different `state_key`s coexist; bootstrap uses the most recent one whose schema versions it accepts.
+
+### 21.6 External encrypted hydration files
+
+Standalone, self-contained bundles stored *outside* Matrix entirely — on a USB stick, an S3 bucket, IPFS, the user's NAS, a printed QR code stream. Encrypted with a key the user holds; **the key is never written to any Matrix room.** This path covers what room-shared hydration cannot:
+
+- **Disaster recovery** when the homeserver is gone.
+- **Air-gap device provisioning** — file on USB → new device with no network.
+- **Long-term cold storage** — vault for years, retrieve much later.
+- **Cross-org handoff** with out-of-band key delivery — no shared homeserver needed.
+
+Three key modes:
+
+| Mode | Derivation |
+|---|---|
+| **Passphrase** (default) | Argon2id KDF (salt + parameters in the file's plaintext header) → 32-byte AES key |
+| **Hardware key** | HKDF-SHA256 over the WebAuthn PRF extension output |
+| **Split** (optional) | Shamir n-of-m over GF(256); each share is a small `.khr.share` with its own header |
+
+The file uses the `khora.hydration.v1` envelope (§21.4) wrapped as `khora.hydration.v1.khr` with a plaintext header (format, version, key mode, KDF parameters, scope, `key_fingerprint`, `payload_sha256`, claimed counts, schema versions) followed by an AES-GCM nonce, AES-256-GCM ciphertext over the bundle (header bound into the GCM AAD), and an optional Ed25519 signature. The header is plaintext so a recipient who *lacks* the key can still answer "what kind of file is this, who claims to have produced it, and what scope does it cover?" without exposing the payload.
+
+`key_fingerprint` is a public 8-byte SHA-256 prefix of the derived key — non-sensitive, used to match a held key to a stored file before attempting decryption. Wrong key fails fast and explicit at fingerprint-compare; the file never enters the rest of the import pipeline.
+
+Optional **audit breadcrumb**: `eo.user.hydration_index` written to the user's own user room (§5):
+
+```json
+{
+  "type": "eo.user.hydration_index",
+  "content": {
+    "taken_at": "2026-05-06T12:34:56Z",
+    "label": "before-laptop-trip",
+    "file_sha256": "...",
+    "key_fingerprint": "...",
+    "key_mode": "passphrase",
+    "scope": { "room_ids": [...], "as_of_event": {...} },
+    "size_bytes": 12345678,
+    "storage_hint": "Ledger NAS, /backups/khora/2026-05-06.khr"
+  }
+}
+```
+
+Pure metadata. Never includes the key, the passphrase, the salt, or any payload bytes. The breadcrumb federates through Matrix; the file does not. Together they let a user audit their backup history from any device. The breadcrumb is *not* required for file use — every external file is fully self-describing.
+
+### 21.7 Capability API for hydration
+
+Bootstrap exposes two methods, additive to §6.2:
+
+```typescript
+exportHydration(scope, options): Promise<{
+  bytes: Uint8Array,
+  sha256: string,
+  key_fingerprint: string
+}>
+
+importHydration(bytes: Uint8Array, key: KeyMaterial): Promise<{
+  rooms_imported: RoomId[],
+  events_replayed: number,
+  conflicts: ConflictRecord[]
+}>
+```
+
+`scope`: list of room IDs or `"all"`. `options`: `key_mode` (`"passphrase" | "hardware-key" | "split"`), `include_megolm` (default `false` — granting decryption rights for past encrypted events; opt-in per export), `include_indexes`, `include_media_cache` (full vs. references-only), `sign` (Ed25519 with the producing device key), `audit` (write the `eo.user.hydration_index` breadcrumb).
+
+`importHydration` enforces the §20 write contract on every replayed event: each event passes through schema validation, EO-triple verification, and the materializer pipeline. Idempotent — re-importing the same file is a no-op past fingerprint check if a `hydration` row with `source: "external"` already records that `key_fingerprint` (STORAGE §3.7). Rooms whose head is already past the bundle's `as_of_event` treat the import as a historical fast-fill: applies to events not already present, never overwrites existing events. Same-event-id conflicts (homeserver lie or tampering) are surfaced in `ConflictRecord[]`, never silently overwritten.
+
+`exportHydration` and `importHydration` are restricted by mount permissions: a mount without `read` on a room cannot export it; any importer can write into rooms it has membership and `append` rights for. Bootstrap's storage panel and the capability audit log surface every import as `"Imported hydration from external file <key_fingerprint>, scope=…, taken_at=…, signed_by=…"` so exfiltration attempts are visible after the fact.
+
+### 21.8 Bulk imports
+
+Bulk import (`<ImportView>`, CLI tools, sneakernet replays) writes one parent `eo.import.batch` event with children attached via `m.relates_to: { rel_type: "m.thread", event_id: $parent }`. Bootstrap rate-limits child writes (configurable, default 20/sec) so the homeserver isn't flooded; the audit log records the batch as a single line with a child count. Each child still passes through the §20 contract.
+
+### 21.9 Backpressure
+
+`outbound_queue` (STORAGE §3.8) caps pending writes per room. When the cap is hit, `append` resolves with the tentative event ID immediately (per §20 step 4) but the upload waits. The bootstrap UI surfaces pending count and lets the user pause / resume / abandon. Abandoned writes are removed from the queue and marked `failed` in the local changelog; the calling app sees them via the read-your-writes path until eviction.
+
+### 21.10 Orphan-blob GC
+
+External blobs become orphans when the events that referenced them are redacted, when bundles are replaced, or when imports fail mid-flight. Bootstrap **surfaces** orphans in the storage panel with size and age but does **not** auto-delete — incident response and forensic work routinely require recovering a referenced blob long after the event's content has been redacted (Matrix preserves redaction targets per §4.3; the cache should preserve their referenced media on the same principle). Reference counting runs as a periodic background scan over `events`. Users opt into deletion explicitly per blob or in bulk.
+
+### 21.11 Federation, sneakernet, fallback
+
+`mxc://` URIs are server-anchored, which is a real limitation: a recipient on a different homeserver may not be able to fetch the blob even if they can read the event. Mitigations layer:
+
+- **`fallback_url`** in the reference structure — HTTPS gateway, R2, Arweave, IPFS gateway. Bootstrap tries `mxc://` first, falls through to fallback on 404 / federation timeout.
+- **Replicated upload** — `tools/publish.ts` (and `tools/hydration.ts`) accept a list of homeservers and post the same blob to each, embedding the highest-availability URI as `primary_uri` and others as `fallback_url`s.
+- **P2P direct exchange** (§18.3) — embedded homeserver and direct WebRTC carry blobs the same way as events.
+- **External hydration files** (§21.6) — the canonical sneakernet artifact. `<ImportView>` and `khora-hyd import` accept these files and replay them through the same write contract.
+
+### 21.12 Materializer interaction
+
+A field marked `externalizable_fields[]` MUST NOT also appear in the schema's `materializers[]` (STORAGE §7) as a key, value projection, or graph endpoint. Materializers run on the inline event content; an externalized field is a reference, not the underlying value. Apps that need both must duplicate a small projection of the field — for example, a `body_excerpt` short field for materializer keying alongside a full `body` externalizable field. The schema validator enforces the XOR at registration time and rejects schemas that overlap.
+
+### 21.13 The §20 write-contract patch
+
+§20.1 inserts a new step 5 ("Externalize over-threshold fields") between local changelog (step 4) and server send (now step 6); previous steps 5–10 shift to 6–11. §20.3 adds two failure surfaces: `PayloadTooLarge` and `MediaUploadFailed`. The contract continues to apply to every entry path in §20.2 — including `importHydration`, which replays bundle events through the same validator-and-materializer chain.
+
+The full text of the new step and failure surfaces lives in §20.1 and §20.3 respectively; this subsection is a pointer back, not a duplicate.
+
+### 21.14 Phase placement
+
+- **Phase 3** (write path + user rooms) — externalization (§21.2, §21.3, §21.13) lands with the write contract. Schemas adopting `externalizable_fields[]` ship in Phase 3 alongside the apps that need them.
+- **Phase 4** (snapshots) — both hydration paths (§21.4–§21.7) land with snapshots. The block composer's `eo.layout.dashboard` events become the first benchmark for externalized state.
+
+Phases 1 and 2 do not depend on §21 features.

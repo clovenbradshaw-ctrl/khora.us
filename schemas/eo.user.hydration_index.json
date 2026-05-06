@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://khora.us/schemas/eo.user.hydration_index.json",
+  "title": "eo.user.hydration_index",
+  "description": "Optional audit breadcrumb event in the user's user room recording the metadata of an external khora.hydration.v1.khr file the user produced or received (SPEC §21.6). Pure metadata — never includes the encryption key, the passphrase, the salt, or any payload bytes. Lets the user identify which file is which from any device without compromising any key.",
+  "type": "object",
+  "required": ["type", "content"],
+  "properties": {
+    "type": { "const": "eo.user.hydration_index" },
+    "content": {
+      "type": "object",
+      "required": ["taken_at", "file_sha256", "key_fingerprint", "key_mode", "scope", "size_bytes"],
+      "properties": {
+        "taken_at": { "type": "string", "format": "date-time" },
+        "label": {
+          "type": "string",
+          "description": "Optional human-readable label, e.g. 'before-laptop-trip'."
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/=]{43,44}$|^[0-9a-f]{64}$",
+          "description": "SHA-256 of the .khr file bytes."
+        },
+        "key_fingerprint": {
+          "type": "string",
+          "description": "Base64-encoded 8-byte SHA-256 prefix of the derived encryption key. Public, non-sensitive identifier — lets the user match a held key to a stored file before attempting decryption. Wrong-key attempts fail at fingerprint compare without exposing the payload."
+        },
+        "key_mode": {
+          "enum": ["passphrase", "hardware-key", "split"],
+          "description": "Key derivation mode the file uses."
+        },
+        "split": {
+          "type": "object",
+          "description": "Present only when key_mode == 'split'. Records the Shamir scheme parameters; never any share value.",
+          "required": ["scheme", "n", "k"],
+          "properties": {
+            "scheme": { "const": "shamir-gf256" },
+            "n": { "type": "integer", "minimum": 2 },
+            "k": { "type": "integer", "minimum": 2 }
+          },
+          "additionalProperties": false
+        },
+        "scope": {
+          "type": "object",
+          "description": "Rooms covered by the file and the as_of_event per room.",
+          "required": ["room_ids"],
+          "properties": {
+            "room_ids": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            },
+            "as_of_event": {
+              "type": "object",
+              "description": "Map of room_id → Matrix event ID at which that room's bundle slice was captured.",
+              "additionalProperties": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "signed_by_device": {
+          "type": "string",
+          "description": "Optional Matrix device ID that Ed25519-signed the file."
+        },
+        "storage_hint": {
+          "type": "string",
+          "description": "Optional human-readable note about where the file is stored, e.g. 'Ledger NAS, /backups/khora/2026-05-06.khr'. Pure UX hint; never load-bearing."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

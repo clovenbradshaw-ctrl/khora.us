@@ -204,9 +204,70 @@ keyPath:  mxc_uri
 }
 ```
 
-LRU eviction unless `pinned`.
+LRU eviction unless `pinned`. Externalized field blobs (SPEC §21.2) reuse this same cache; apps see them through `resolveMedia()` as `Blob`s, never as `mxc://` strings.
 
-### 3.7 `meta`
+### 3.7 `hydration`
+
+Records hydration sources that have been applied to the local cache (SPEC §21.4–§21.7). Both room-shared (`m.room.hydration`) and external-file imports land here so the storage panel and the audit log can attribute "where did this room's history come from?" honestly.
+
+```
+keyPath:  [room_id, source_id]
+indexes:
+  - by_room_source         (room_id, source)
+  - by_key_fingerprint     (key_fingerprint)   // sparse; external only
+```
+
+Row:
+
+```json
+{
+  "room_id": "!abc:server",
+  "source_id": "$evt_for_room_shared_OR_ext:9f86d081...",
+  "source": "room" | "external",
+  "format": "khora.hydration.v1",
+  "created_at": 1730000000000,
+  "imported_at": 1730000005000,
+  "state_at_event_id": "$evt_at_snapshot",
+  "media_references": ["mxc://server/A...", "mxc://server/B..."],
+  "created_by": "@michael:michael.tld",
+  "key_fingerprint": "base64-8-bytes",
+  "signed_by_device": "ABC",
+  "expires_at": null
+}
+```
+
+Room-shared rows (`source: "room"`) sync from data rooms via the `m.room.hydration` state event and `source_id` is the event ID. External-file rows (`source: "external"`) are written by `importHydration` (SPEC §21.7) and `source_id` is `"ext:" + sha256_prefix` of the file. `key_fingerprint` is recorded for external rows only — never the key itself, never the passphrase. The store is the deduplication ground for re-imports: a second `importHydration` of the same file is a no-op past fingerprint check.
+
+### 3.8 `outbound_queue`
+
+Tracks pending writes that have hit the local changelog but not yet succeeded against the homeserver. Backs the §21.9 backpressure path and the SPEC §20 step 5 atomic-rollback semantics for failed externalization.
+
+```
+keyPath:  [room_id, local_seq]
+indexes:
+  - by_status              (room_id, status)
+  - by_attempts            (room_id, attempts)
+```
+
+Row:
+
+```json
+{
+  "room_id": "!abc:server",
+  "local_seq": 1234567,
+  "tentative_event_id": "$tentative_...",
+  "event_data": { "type": "...", "content": { ... } },
+  "status": "pending" | "sent" | "failed",
+  "attempts": 0,
+  "created_at": 1730000000000,
+  "last_attempt_at": null,
+  "last_error": null
+}
+```
+
+Rows are cleared on 2xx homeserver confirmation (the changelog row is updated in place per SPEC §20.1 step 6). `failed` rows survive until the user explicitly abandons or retries them through the storage panel. The queue is **per-room** so a slow upload in one room never blocks writes in another.
+
+### 3.9 `meta`
 
 Miscellaneous singletons: user_id, homeserver_url, device_id, app preferences, capability audit log.
 
@@ -318,6 +379,12 @@ To restore state at a target `local_seq = T`:
 
 If `T` is the current head, this is the live `state_current`. If `T` is a past event, this is a time-travel view used for snapshot restoration, audit, diff.
 
+#### 6.3.1 Hydration during restoration
+
+Hydration (SPEC §21.4–§21.7) is a **fast-fill** for cases where neither a checkpoint nor a contiguous changelog exists locally — a fresh device, a long-offline peer, an air-gapped recipient. On import, a hydration bundle becomes equivalent to "checkpoint at `as_of_event` plus the events leading up to it"; subsequent `/sync` continues incrementally from `as_of_event`. Externalized field references inside hydrated events resolve lazily through `media` (§3.6) — the bundle's optional `media-cache` section pre-populates that store; without it, blobs fetch on first access just like any other reference.
+
+Hydration writes a `hydration` row (§3.7) recording the source, so the storage panel can show "this room's history was bootstrapped from <source> on <date>" rather than presenting derived state as if it had been live-synced.
+
 ### 6.4 Compaction
 
 Default policy:
@@ -332,6 +399,18 @@ Default policy:
 When evicting events, write a `_gap` marker (§4.2) so replay knows it's incomplete past that point.
 
 For most rooms, never evict. Storage is cheap; the audit chain is valuable. Eviction is for high-volume read-only rooms (RSS feeds, public corpora) where deep history isn't worth the disk.
+
+### 6.5 Three sources, one cache
+
+The cache fills from three distinct paths. They serve overlapping purposes and stack — a device can run with checkpoints alone, ingest a room-shared hydration on join, and accept an external file at any later point.
+
+| Source | Where it lives | When useful | Federates? |
+|---|---|---|---|
+| Device-local **checkpoints** (§6) | `checkpoints` store, never sent over the wire | Always-on local cache; bounds replay cost | No |
+| **Room-shared hydration** (SPEC §21.5) | `m.room.hydration` state event in the data room | New devices joining a room with deep history; offline peers reconnecting | Yes (via Matrix) |
+| **External hydration files** (SPEC §21.6) | Standalone `.khr` file the user holds outside Matrix | Disaster recovery, air-gap provisioning, cold storage, cross-org handoff with out-of-band keys | No (deliberately) |
+
+Imports from any of the three paths land equivalent state in `state_current`, `indexes_live`, and `events`. The provenance is preserved in `checkpoints.reason` (for local pins) and the `hydration` store (for the two hydration paths) so restoration history remains auditable.
 
 ---
 
@@ -498,6 +577,8 @@ If `/sync` returns events whose `event_id`s indicate we're behind in a way our `
 Each device maintains its own cache. They are not synced peer-to-peer; they sync independently against the homeserver. A second device sees the same events in the same Matrix-DAG order, but its `local_seq` numbering is independent.
 
 This means **`local_seq` is local-only**. It is never sent to other devices, never written into Matrix events, never used in capability API arguments visible to apps. Apps see Matrix `event_id`s. `local_seq` is a private optimization for IndexedDB queries.
+
+Hydration (SPEC §21.4–§21.7) crosses devices via two paths with different reach: room-shared `m.room.hydration` events federate through Matrix to any device that can read the room; external hydration files travel out of band (USB, S3, IPFS, QR-code stream) and reach devices that may not share a homeserver at all. Local checkpoints (§6) never cross devices.
 
 ### 10.3 Encrypted rooms
 

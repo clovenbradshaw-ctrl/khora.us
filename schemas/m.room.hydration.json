@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://khora.us/schemas/m.room.hydration.json",
+  "title": "m.room.hydration",
+  "description": "State event in a data room referencing a khora.hydration.v1 bundle (SPEC §21.5). Lets new devices, offline peers, and re-joining members fast-bootstrap a room without walking /sync from genesis.",
+  "type": "object",
+  "required": ["type", "state_key", "content"],
+  "properties": {
+    "type": { "const": "m.room.hydration" },
+    "state_key": {
+      "type": "string",
+      "description": "Bundle version label (e.g. 'v1.0.0'). Multiple m.room.hydration events with different state_keys may coexist; bootstrap selects the most recent one whose schema versions it accepts."
+    },
+    "content": {
+      "type": "object",
+      "required": ["format", "primary_uri", "sha256", "size_bytes", "as_of_event", "produced_at", "produced_by", "schema_versions"],
+      "properties": {
+        "format": {
+          "const": "khora.hydration.v1",
+          "description": "Bundle format identifier. Future versions mint a new identifier."
+        },
+        "primary_uri": {
+          "type": "string",
+          "pattern": "^mxc://",
+          "description": "Authenticated-media URI of the bundle. SPEC §3.3 / §21.5."
+        },
+        "fallback_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional HTTPS / IPFS / Arweave fallback for when the primary mxc cannot be fetched."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/=]{43,44}$|^[0-9a-f]{64}$",
+          "description": "SHA-256 of the bundle bytes (base64 or hex)."
+        },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "as_of_event": {
+          "type": "string",
+          "description": "Matrix event ID at which the bundle's state was captured. Importing devices /sync incrementally past this event."
+        },
+        "produced_at": { "type": "string", "format": "date-time" },
+        "produced_by": {
+          "type": "string",
+          "description": "Matrix user ID of the producing party."
+        },
+        "produced_by_device": {
+          "type": "string",
+          "description": "Optional Matrix device ID of the producing device, for signature verification."
+        },
+        "schema_versions": {
+          "type": "object",
+          "description": "Map of schema_id → schema_version covered by the bundle. Importers refuse incompatible bundles.",
+          "additionalProperties": { "type": "string" }
+        },
+        "signature": {
+          "type": "object",
+          "description": "Optional Ed25519 signature over the bundle bytes by the producing device.",
+          "required": ["alg", "device_id", "value"],
+          "properties": {
+            "alg": { "const": "ed25519" },
+            "device_id": { "type": "string" },
+            "value": {
+              "type": "string",
+              "description": "Base64-encoded 64-byte signature."
+            }
+          },
+          "additionalProperties": false
+        },
+        "expires_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Optional expiry; bootstrap may decline to use bundles past this point. Null = no expiry."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

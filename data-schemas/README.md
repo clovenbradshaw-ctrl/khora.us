@@ -17,7 +17,9 @@ Each schema is JSON Schema draft 2020-12 and validates the `payload` field of it
 1. Pick a `schema_id` (reverse-DNS-style, e.g. `org.example.X.v1`). Once published, treat it as immutable.
 2. Enumerate `event_types` with `{type, operator, min_pl}`.
 3. Write payload schemas for each event type.
-4. Publish into a real data room as a `m.room.data_schema` state event.
-5. Add a registry entry so other apps can discover it (SPEC §7).
+4. For any payload field that may exceed ~16KB inline (long bodies, attachments, image / PDF blobs, large state snapshots), declare it under that event type's `externalizable_fields[]` array (SPEC §21.2). Bootstrap externalizes those fields automatically on `append`; readers see the field via `resolveMedia()`.
+5. A field declared in `externalizable_fields[]` MUST NOT also appear in `materializers[]` (STORAGE §7) as a key, value projection, or graph endpoint — the materializer pipeline runs on inline content, not references. Apps needing both should duplicate a small projection (e.g., `body_excerpt` short field for indexing alongside a full `body` externalized field).
+6. Publish into a real data room as a `m.room.data_schema` state event.
+7. Add a registry entry so other apps can discover it (SPEC §7).
 
 Breaking changes mint a new `schema_id` and (almost always) a new room. Migration is by `m.room.data_schema_migration` pointer (SPEC §4.4).
